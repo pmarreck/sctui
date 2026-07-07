@@ -24,20 +24,23 @@ This application uses SoundCloud's undocumented internal API through a reverse-e
 - **Real audio playback** using Beep library
 - **Search and browse** SoundCloud tracks
 - **Player controls** (play/pause, seek, volume)
+- **Silent Firefox session login** for personal/private SoundCloud library access
+- **Personal playlists and favorites tabs** with interactive track playback
 - **Progress tracking** with smooth progress bars
 - **Global hotkeys** (Space, ←→, +/-) work from any view
 - **Track completion** handling with replay functionality
 - **CLI mode** for search and track info
 
 🎵 **TUI Navigation:**
-- **Tab/Shift+Tab**: Switch between Search/Player/Queue views
+- **Tab/Shift+Tab**: Switch between Search/Player/Playlists/Favorites views
 - **Search View**: Enter to search, ↑↓ to navigate, Enter to select
 - **Player View**: Space (play/pause), ←→ (seek 10s), +/- (volume)
+- **Playlists View**: ↑↓ to navigate, →/Enter to open a playlist or play a track, ←/Esc to go back
+- **Favorites View**: ↑↓ to navigate liked tracks, Enter to play
 - **Global Controls**: Audio controls work from any view
 
 🚧 **Coming Soon:**
-- Playlist management and queue functionality
-- Favorites and user library integration
+- Queue management
 - Enhanced metadata display
 
 ## Installation
@@ -86,6 +89,12 @@ Launches the full interactive Terminal UI with audio playback capabilities.
 - **Search View**: 
   - Type to search, Enter to execute
   - ↑↓ to navigate results, Enter to play
+- **Playlists View**:
+  - ↑↓ to navigate playlists or playlist tracks
+  - →/Enter to open a playlist or play the selected track
+  - ←/Esc to return from playlist tracks to the playlist list
+- **Favorites View**:
+  - ↑↓ to navigate liked tracks, Enter to play
 - **Global Audio Controls** (work from any view):
   - **Space**: Play/Pause
   - **←→**: Seek backward/forward (10 seconds)
@@ -175,8 +184,8 @@ go test -cover ./...
 - Volume and seeking controls
 
 **Phase 3: Enhanced Experience** 🚧
-- Playlist management and queue
-- Favorites and user library
+- Personal playlists and favorites
+- Queue management
 - Advanced metadata display
 - Improved error handling
 

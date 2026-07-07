@@ -13,6 +13,7 @@ import (
 )
 
 const apiV2 = "https://api-v2.soundcloud.com"
+const trackHydrationBatchSize = 100
 
 // Client wraps the SoundCloud API client
 type Client struct {
@@ -397,19 +398,26 @@ func (c *Client) PlaylistTracks(playlistID int64) ([]Track, error) {
 		return tracks, nil
 	}
 
-	idParts := make([]string, len(shallowIDs))
-	for i, id := range shallowIDs {
-		idParts[i] = strconv.FormatInt(id, 10)
-	}
-	var hydrated []v2Track
-	if err := c.getV2("/tracks?ids="+strings.Join(idParts, ","), &hydrated); err != nil {
-		return nil, err
+	byID := make(map[int64]Track, len(shallowIDs))
+	for start := 0; start < len(shallowIDs); start += trackHydrationBatchSize {
+		end := start + trackHydrationBatchSize
+		if end > len(shallowIDs) {
+			end = len(shallowIDs)
+		}
+
+		idParts := make([]string, end-start)
+		for i, id := range shallowIDs[start:end] {
+			idParts[i] = strconv.FormatInt(id, 10)
+		}
+		var hydrated []v2Track
+		if err := c.getV2("/tracks?ids="+strings.Join(idParts, ","), &hydrated); err != nil {
+			return nil, err
+		}
+		for _, raw := range hydrated {
+			byID[raw.ID] = raw.toTrack()
+		}
 	}
 
-	byID := make(map[int64]Track, len(hydrated))
-	for _, raw := range hydrated {
-		byID[raw.ID] = raw.toTrack()
-	}
 	for id, positions := range shallowPositions {
 		track, ok := byID[id]
 		if !ok {
@@ -424,10 +432,18 @@ func (c *Client) PlaylistTracks(playlistID int64) ([]Track, error) {
 }
 
 // FavoriteTracks returns the signed-in user's liked tracks for the Favorites
-// tab, using SoundCloud's api-v2 track-likes collection.
+// tab, using SoundCloud's api-v2 user-scoped track-likes collection.
 func (c *Client) FavoriteTracks() ([]Track, error) {
 	if !c.authed {
 		return nil, fmt.Errorf("not signed in (no browser session found)")
+	}
+
+	me, err := c.Me()
+	if err != nil {
+		return nil, err
+	}
+	if me.ID == 0 {
+		return nil, fmt.Errorf("signed-in user response had no ID")
 	}
 
 	var resp struct {
@@ -435,7 +451,7 @@ func (c *Client) FavoriteTracks() ([]Track, error) {
 			Track *v2Track `json:"track"`
 		} `json:"collection"`
 	}
-	if err := c.getV2("/me/track_likes?limit=200&linked_partitioning=1", &resp); err != nil {
+	if err := c.getV2(fmt.Sprintf("/users/%d/track_likes?limit=200&linked_partitioning=1", me.ID), &resp); err != nil {
 		return nil, err
 	}
 

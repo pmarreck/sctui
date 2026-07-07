@@ -1,12 +1,14 @@
 package ui_test
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/charmbracelet/bubbletea"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"soundcloud-tui/internal/soundcloud"
 	"soundcloud-tui/internal/ui/app"
 )
 
@@ -34,24 +36,31 @@ func TestApp_Navigation(t *testing.T) {
 			shouldChange: true,
 		},
 		{
-			name:         "tab from player to queue",
+			name:         "tab from player to playlists",
 			currentView:  app.ViewPlayer,
 			keyPressed:   "tab",
-			expectedView: app.ViewQueue,
+			expectedView: app.ViewPlaylists,
 			shouldChange: true,
 		},
 		{
-			name:         "tab from queue to search",
-			currentView:  app.ViewQueue,
+			name:         "tab from playlists to favorites",
+			currentView:  app.ViewPlaylists,
+			keyPressed:   "tab",
+			expectedView: app.ViewFavorites,
+			shouldChange: true,
+		},
+		{
+			name:         "tab from favorites to search",
+			currentView:  app.ViewFavorites,
 			keyPressed:   "tab",
 			expectedView: app.ViewSearch,
 			shouldChange: true,
 		},
 		{
-			name:         "shift+tab from search to queue",
+			name:         "shift+tab from search to favorites",
 			currentView:  app.ViewSearch,
 			keyPressed:   "shift+tab",
-			expectedView: app.ViewQueue,
+			expectedView: app.ViewFavorites,
 			shouldChange: true,
 		},
 		{
@@ -129,7 +138,8 @@ func TestApp_ViewTypes(t *testing.T) {
 	}{
 		{app.ViewSearch, "search"},
 		{app.ViewPlayer, "player"},
-		{app.ViewQueue, "queue"},
+		{app.ViewPlaylists, "playlists"},
+		{app.ViewFavorites, "favorites"},
 	}
 
 	for _, tt := range tests {
@@ -193,11 +203,172 @@ func TestApp_StateManagement(t *testing.T) {
 	assert.Equal(t, app.ViewPlayer, application.GetCurrentView())
 
 	// Test multiple view changes
-	views := []app.ViewType{app.ViewQueue, app.ViewSearch, app.ViewPlayer}
+	views := []app.ViewType{app.ViewPlaylists, app.ViewFavorites, app.ViewSearch, app.ViewPlayer}
 	for _, view := range views {
 		application.SetCurrentView(view)
 		assert.Equal(t, view, application.GetCurrentView())
 	}
+}
+
+func TestApp_PlaylistsTabLoadsAndPlaysTrack(t *testing.T) {
+	application := app.NewAppWithDependencies(
+		&MockSoundCloudClient{
+			Authenticated:   true,
+			AuthSourceValue: "Firefox (default)",
+			LibraryFunc: func() ([]soundcloud.Playlist, error) {
+				return []soundcloud.Playlist{
+					{ID: 10, Title: "Samson likes", TrackCount: 2, Sharing: "private", Kind: "owned"},
+				}, nil
+			},
+			PlaylistFunc: func(playlistID int64) ([]soundcloud.Track, error) {
+				assert.Equal(t, int64(10), playlistID)
+				return []soundcloud.Track{
+					{ID: 123, Title: "Playlist Track", User: soundcloud.User{Username: "Playlist Artist"}},
+				}, nil
+			},
+		},
+		&MockAudioPlayer{},
+		&MockStreamExtractor{},
+	)
+
+	updated, cmd := application.Update(tea.KeyMsg{Type: tea.KeyTab})
+	application = updated.(*app.App)
+	require.Nil(t, cmd)
+	updated, cmd = application.Update(tea.KeyMsg{Type: tea.KeyTab})
+	application = updated.(*app.App)
+	require.NotNil(t, cmd)
+	assert.Equal(t, app.ViewPlaylists, application.GetCurrentView())
+
+	updated, _ = application.Update(cmd())
+	application = updated.(*app.App)
+	assert.Contains(t, application.View(), "Samson likes")
+
+	updated, cmd = application.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	application = updated.(*app.App)
+	require.NotNil(t, cmd)
+	updated, _ = application.Update(cmd())
+	application = updated.(*app.App)
+	assert.Contains(t, application.View(), "Playlist Track")
+
+	updated, cmd = application.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	application = updated.(*app.App)
+	require.NotNil(t, cmd)
+	assert.Equal(t, "Playlist Track", application.GetCurrentTrack().Title)
+}
+
+func TestApp_PlaylistsTabRightAndLeftDrillIntoPlaylist(t *testing.T) {
+	application := app.NewAppWithDependencies(
+		&MockSoundCloudClient{
+			Authenticated:   true,
+			AuthSourceValue: "Firefox (default)",
+			LibraryFunc: func() ([]soundcloud.Playlist, error) {
+				return []soundcloud.Playlist{
+					{ID: 10, Title: "Samson likes", TrackCount: 2, Sharing: "private", Kind: "owned"},
+				}, nil
+			},
+			PlaylistFunc: func(playlistID int64) ([]soundcloud.Track, error) {
+				assert.Equal(t, int64(10), playlistID)
+				return []soundcloud.Track{
+					{ID: 123, Title: "Playlist Track", User: soundcloud.User{Username: "Playlist Artist"}},
+				}, nil
+			},
+		},
+		&MockAudioPlayer{},
+		&MockStreamExtractor{},
+	)
+
+	updated, _ := application.Update(tea.KeyMsg{Type: tea.KeyTab})
+	application = updated.(*app.App)
+	updated, cmd := application.Update(tea.KeyMsg{Type: tea.KeyTab})
+	application = updated.(*app.App)
+	require.NotNil(t, cmd)
+	updated, _ = application.Update(cmd())
+	application = updated.(*app.App)
+	assert.Contains(t, application.View(), "Samson likes")
+
+	updated, cmd = application.Update(tea.KeyMsg{Type: tea.KeyRight})
+	application = updated.(*app.App)
+	require.NotNil(t, cmd)
+	updated, _ = application.Update(cmd())
+	application = updated.(*app.App)
+	assert.Contains(t, application.View(), "Playlist Track")
+
+	updated, _ = application.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	application = updated.(*app.App)
+	view := application.View()
+	assert.Contains(t, view, "Samson likes")
+	assert.NotContains(t, view, "Playlist Track")
+}
+
+func TestApp_PlaylistsTabWindowsManyPlaylistsAroundSelection(t *testing.T) {
+	playlists := make([]soundcloud.Playlist, 40)
+	for i := range playlists {
+		playlists[i] = soundcloud.Playlist{
+			ID:         int64(i + 1),
+			Title:      fmt.Sprintf("Playlist %03d", i+1),
+			TrackCount: 1,
+			Kind:       "owned",
+		}
+	}
+	application := app.NewAppWithDependencies(
+		&MockSoundCloudClient{
+			Authenticated:   true,
+			AuthSourceValue: "Firefox (default)",
+			LibraryFunc: func() ([]soundcloud.Playlist, error) {
+				return playlists, nil
+			},
+		},
+		&MockAudioPlayer{},
+		&MockStreamExtractor{},
+	)
+	updated, _ := application.Update(tea.WindowSizeMsg{Width: 80, Height: 16})
+	application = updated.(*app.App)
+	updated, _ = application.Update(tea.KeyMsg{Type: tea.KeyTab})
+	application = updated.(*app.App)
+	updated, cmd := application.Update(tea.KeyMsg{Type: tea.KeyTab})
+	application = updated.(*app.App)
+	require.NotNil(t, cmd)
+	updated, _ = application.Update(cmd())
+	application = updated.(*app.App)
+
+	for i := 0; i < 29; i++ {
+		updated, _ = application.Update(tea.KeyMsg{Type: tea.KeyDown})
+		application = updated.(*app.App)
+	}
+
+	view := application.View()
+	assert.Contains(t, view, "Playlist 030")
+	assert.NotContains(t, view, "Playlist 001")
+}
+
+func TestApp_FavoritesTabLoadsAndPlaysTrack(t *testing.T) {
+	application := app.NewAppWithDependencies(
+		&MockSoundCloudClient{
+			Authenticated:   true,
+			AuthSourceValue: "Firefox (default)",
+			FavoritesFunc: func() ([]soundcloud.Track, error) {
+				return []soundcloud.Track{
+					{ID: 456, Title: "Favorite Track", User: soundcloud.User{Username: "Favorite Artist"}},
+				}, nil
+			},
+		},
+		&MockAudioPlayer{},
+		&MockStreamExtractor{},
+	)
+
+	updated, cmd := application.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	application = updated.(*app.App)
+	require.NotNil(t, cmd)
+	updated, _ = application.Update(cmd())
+	application = updated.(*app.App)
+
+	assert.Equal(t, app.ViewFavorites, application.GetCurrentView())
+	assert.Contains(t, application.View(), "Favorite Track")
+
+	updated, cmd = application.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	application = updated.(*app.App)
+	require.NotNil(t, cmd)
+	assert.Equal(t, "Favorite Track", application.GetCurrentTrack().Title)
 }
 
 func TestApp_ErrorHandling(t *testing.T) {

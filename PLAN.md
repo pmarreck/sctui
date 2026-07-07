@@ -11,9 +11,19 @@ Done criteria:
   `/tracks?ids=...`. Completed 2026-07-07 19:09 EDT.
 - [x] The interactive TUI header surfaces whether the app is signed in or browsing
   anonymously. Completed 2026-07-07 19:14 EDT.
-- [ ] The TUI has a playlist/library view: list playlists, drill into tracks, and
-  send selected tracks to the existing player.
-- [ ] The TUI has a favorites view for liked tracks and can play selected tracks.
+- [x] The TUI has a playlist/library view: list playlists, drill into tracks, and
+  send selected tracks to the existing player. Completed 2026-07-07 19:21 EDT.
+- [x] The TUI has a favorites view for liked tracks and can play selected tracks.
+  Completed 2026-07-07 19:21 EDT.
+- [x] Favorites uses the live browser-OAuth-compatible endpoint
+  `/users/<me.ID>/track_likes` instead of stale `/me/track_likes`.
+  Completed 2026-07-07 19:28 EDT.
+- [x] Long playlist/favorites views render bounded windows around the selection,
+  and Playlists maps →/Enter to open/play plus ←/Esc to go back.
+  Completed 2026-07-07 19:28 EDT.
+- [x] Large playlists hydrate shallow track IDs in batches so 499-item playlists
+  do not fail on an oversized `/tracks?ids=...` request.
+  Completed 2026-07-07 19:30 EDT.
 - [ ] `./test` and `./build` pass before each commit.
 
 Next small behaviors:
@@ -26,13 +36,24 @@ Next small behaviors:
 - [x] TUI auth notice behavior: render signed-in source in the header.
   Curiosity poke: how does the TUI behave if `Me()` fails after cookie discovery?
   Completed 2026-07-07 19:14 EDT.
-- [ ] Library behavior: render playlists and drill into tracks without blocking
+- [x] Library behavior: render playlists and drill into tracks without blocking
   the Bubble Tea update loop.
   Curiosity poke: what should a system playlist without a numeric playlist ID do?
-- [ ] Favorites behavior: fetch liked tracks through the logged-in api-v2 session
+  Completed 2026-07-07 19:21 EDT.
+- [x] Favorites behavior: fetch liked tracks through the logged-in api-v2 session
   and render/play them in a dedicated tab.
   Curiosity poke: does the library endpoint return liked tracks directly, or do
-  we need a separate paginated track-likes endpoint?
+  we need a separate paginated track-likes endpoint? Completed 2026-07-07 19:21 EDT.
+- [x] Bug fix: FavoriteTracks uses `/me` to find the signed-in numeric user ID,
+  then fetches `/users/<id>/track_likes`.
+  Curiosity poke: what happens when official `/me/likes/tracks` rejects the web
+  session OAuth token? Completed 2026-07-07 19:28 EDT.
+- [x] Bug fix: library list renderers window large sets at small terminal heights.
+  Curiosity poke: can the selected row disappear above the viewport when Peter
+  has many playlists? Completed 2026-07-07 19:28 EDT.
+- [x] Bug fix: split large playlist track hydration into bounded batches.
+  Curiosity poke: can an 8-track playlist pass while a 499-track playlist fails
+  from URL/request-size limits? Completed 2026-07-07 19:30 EDT.
 
 ## Current Status (December 2024)
 
@@ -55,7 +76,7 @@ Next small behaviors:
 - ✅ **Error Handling**: Enhanced error recovery and state transitions for audio playback
 
 #### Technical Architecture Achieved
-- Complete Bubble Tea TUI with Search/Player/Queue views
+- Complete Bubble Tea TUI with Search/Player/Playlists/Favorites views
 - Real SoundCloud API integration via github.com/zackradisic/soundcloud-api
 - Beep audio library with streaming MP3/WAV support
 - Comprehensive error handling and state management

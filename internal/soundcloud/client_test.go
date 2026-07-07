@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -87,6 +89,68 @@ func TestPlaylistTracksHydratesShallowTracks(t *testing.T) {
 	}
 }
 
+func TestPlaylistTracksHydratesLargeShallowPlaylistsInBatches(t *testing.T) {
+	var seen []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = append(seen, r.URL.RequestURI())
+		w.Header().Set("Content-Type", "application/json")
+
+		switch r.URL.Path {
+		case "/playlists/499":
+			fmt.Fprint(w, `{"tracks":[`)
+			for i := 0; i < 205; i++ {
+				if i > 0 {
+					fmt.Fprint(w, ",")
+				}
+				fmt.Fprintf(w, `{"id":%d}`, 1000+i)
+			}
+			fmt.Fprint(w, `]}`)
+		case "/tracks":
+			ids := strings.Split(r.URL.Query().Get("ids"), ",")
+			if len(ids) > 100 {
+				http.Error(w, "too many ids", http.StatusRequestURITooLong)
+				return
+			}
+			fmt.Fprint(w, `[`)
+			for i, idText := range ids {
+				id, err := strconv.ParseInt(idText, 10, 64)
+				if err != nil {
+					http.Error(w, "bad id", http.StatusBadRequest)
+					return
+				}
+				if i > 0 {
+					fmt.Fprint(w, ",")
+				}
+				fmt.Fprintf(w, `{"id":%d,"title":"Track %d","duration":%d,"user":{"username":"artist%d"}}`, id, id, id*100, id)
+			}
+			fmt.Fprint(w, `]`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := &Client{
+		httpClient:   server.Client(),
+		authed:       true,
+		apiV2BaseURL: server.URL,
+	}
+
+	tracks, err := client.PlaylistTracks(499)
+	if err != nil {
+		t.Fatalf("PlaylistTracks returned error: %v", err)
+	}
+	if len(tracks) != 205 {
+		t.Fatalf("got %d tracks, want 205", len(tracks))
+	}
+	if tracks[0].Title != "Track 1000" || tracks[100].Title != "Track 1100" || tracks[204].Title != "Track 1204" {
+		t.Fatalf("large playlist was not hydrated in order: first=%q middle=%q last=%q", tracks[0].Title, tracks[100].Title, tracks[204].Title)
+	}
+	if len(seen) != 4 {
+		t.Fatalf("got %d API requests, want playlist + 3 hydration batches: %#v", len(seen), seen)
+	}
+}
+
 func TestFavoriteTracksParsesLikedTracks(t *testing.T) {
 	var seen []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -94,7 +158,9 @@ func TestFavoriteTracksParsesLikedTracks(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 
 		switch r.URL.RequestURI() {
-		case "/me/track_likes?limit=200&linked_partitioning=1":
+		case "/me":
+			fmt.Fprint(w, `{"id": 9867108}`)
+		case "/users/9867108/track_likes?limit=200&linked_partitioning=1":
 			fmt.Fprint(w, `{
 				"collection": [
 					{
@@ -147,7 +213,7 @@ func TestFavoriteTracksParsesLikedTracks(t *testing.T) {
 		t.Fatalf("favorite track metadata missing: %#v", tracks)
 	}
 
-	wantRequests := []string{"/me/track_likes?limit=200&linked_partitioning=1"}
+	wantRequests := []string{"/me", "/users/9867108/track_likes?limit=200&linked_partitioning=1"}
 	if !reflect.DeepEqual(seen, wantRequests) {
 		t.Fatalf("unexpected API requests:\n got: %#v\nwant: %#v", seen, wantRequests)
 	}
