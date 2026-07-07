@@ -105,7 +105,12 @@ func (m *MockStreamExtractor) ValidateStreamURL(ctx context.Context, streamURL s
 
 // MockSoundCloudClient implements soundcloud.ClientInterface for testing
 type MockSoundCloudClient struct {
-	SearchFunc func(query string) ([]soundcloud.Track, error)
+	SearchFunc      func(query string) ([]soundcloud.Track, error)
+	LibraryFunc     func() ([]soundcloud.Playlist, error)
+	PlaylistFunc    func(playlistID int64) ([]soundcloud.Track, error)
+	FavoritesFunc   func() ([]soundcloud.Track, error)
+	Authenticated   bool
+	AuthSourceValue string
 }
 
 func (m *MockSoundCloudClient) Search(query string) ([]soundcloud.Track, error) {
@@ -125,4 +130,33 @@ func (m *MockSoundCloudClient) GetTrackInfo(url string) (*soundcloud.Track, erro
 
 func (m *MockSoundCloudClient) GetDownloadURL(trackURL string, format string) (string, error) {
 	return "https://example.com/download.mp3", nil
+}
+
+func (m *MockSoundCloudClient) IsAuthenticated() bool {
+	return m.Authenticated
+}
+
+func (m *MockSoundCloudClient) AuthSource() string {
+	return m.AuthSourceValue
+}
+
+func (m *MockSoundCloudClient) Library() ([]soundcloud.Playlist, error) {
+	if m.LibraryFunc != nil {
+		return m.LibraryFunc()
+	}
+	return []soundcloud.Playlist{}, nil
+}
+
+func (m *MockSoundCloudClient) PlaylistTracks(playlistID int64) ([]soundcloud.Track, error) {
+	if m.PlaylistFunc != nil {
+		return m.PlaylistFunc(playlistID)
+	}
+	return []soundcloud.Track{}, nil
+}
+
+func (m *MockSoundCloudClient) FavoriteTracks() ([]soundcloud.Track, error) {
+	if m.FavoritesFunc != nil {
+		return m.FavoritesFunc()
+	}
+	return []soundcloud.Track{}, nil
 }

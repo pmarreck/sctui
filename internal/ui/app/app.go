@@ -1,6 +1,8 @@
 package app
 
 import (
+	"fmt"
+
 	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
@@ -10,6 +12,17 @@ import (
 	"soundcloud-tui/internal/ui/components/search"
 	"soundcloud-tui/internal/ui/styles"
 )
+
+// SoundCloudClient is the app's SoundCloud port: search/playback methods plus
+// logged-in library access for personal playlists and favorites.
+type SoundCloudClient interface {
+	soundcloud.ClientInterface
+	IsAuthenticated() bool
+	AuthSource() string
+	Library() ([]soundcloud.Playlist, error)
+	PlaylistTracks(playlistID int64) ([]soundcloud.Track, error)
+	FavoriteTracks() ([]soundcloud.Track, error)
+}
 
 // ViewType represents the different views in the application
 type ViewType int
@@ -39,37 +52,47 @@ type App struct {
 	// Window size
 	width  int
 	height int
-	
+
 	// Current view
 	currentView ViewType
 	quitting    bool
-	
+
 	// Components
 	searchComponent *search.SearchComponent
 	playerComponent *player.PlayerComponent
-	
+
 	// Dependencies
-	soundCloudClient soundcloud.ClientInterface
+	soundCloudClient SoundCloudClient
 	audioPlayer      audio.Player
 	streamExtractor  audio.StreamExtractor
+	authNotice       string
 }
-
 
 // NewApp creates a new application instance
 func NewApp() *App {
 	// Initialize SoundCloud client
-	client, _ := soundcloud.NewClient()
-	
+	client, err := soundcloud.NewClient()
+	var appClient SoundCloudClient
+	if err == nil && client != nil {
+		appClient = client
+	}
+
 	// Initialize audio player with buffered streaming for better responsiveness
 	audioPlayer := audio.NewBufferedBeepPlayer()
-	
+
 	// Initialize real stream extractor with the SoundCloud client
 	streamExtractor := audio.NewRealSoundCloudStreamExtractor(client)
-	
+
+	return NewAppWithDependencies(appClient, audioPlayer, streamExtractor)
+}
+
+// NewAppWithDependencies creates an app with explicit ports for deterministic
+// tests and future alternate frontends, while NewApp keeps production defaults.
+func NewAppWithDependencies(client SoundCloudClient, audioPlayer audio.Player, streamExtractor audio.StreamExtractor) *App {
 	// Initialize components
 	searchComponent := search.NewSearchComponent(client)
 	playerComponent := player.NewPlayerComponent(audioPlayer, streamExtractor)
-	
+
 	return &App{
 		width:            80,
 		height:           24,
@@ -80,7 +103,18 @@ func NewApp() *App {
 		soundCloudClient: client,
 		audioPlayer:      audioPlayer,
 		streamExtractor:  streamExtractor,
+		authNotice:       renderAuthNotice(client),
 	}
+}
+
+func renderAuthNotice(client SoundCloudClient) string {
+	if client == nil || !client.IsAuthenticated() {
+		return "🔒 anonymous"
+	}
+	if client.AuthSource() == "" {
+		return "🔓 Signed in"
+	}
+	return fmt.Sprintf("🔓 Signed in via %s", client.AuthSource())
 }
 
 // Init initializes the application
@@ -94,7 +128,7 @@ func (a *App) Init() tea.Cmd {
 // Update handles messages and updates the application state
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
-	
+
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		// Global key handling
@@ -102,15 +136,15 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyCtrlC:
 			a.quitting = true
 			return a, tea.Quit
-			
+
 		case tea.KeyTab:
 			a.nextView()
 			return a, nil
-			
+
 		case tea.KeyShiftTab:
 			a.previousView()
 			return a, nil
-			
+
 		case tea.KeySpace:
 			// Always pass space key to player component for play/pause
 			updatedPlayer, playerCmd := a.playerComponent.Update(msg)
@@ -119,7 +153,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, playerCmd)
 			}
 			return a, tea.Batch(cmds...)
-			
+
 		case tea.KeyLeft, tea.KeyRight:
 			// Always pass seek keys to player component
 			updatedPlayer, playerCmd := a.playerComponent.Update(msg)
@@ -128,7 +162,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, playerCmd)
 			}
 			return a, tea.Batch(cmds...)
-			
+
 		case tea.KeyRunes:
 			// Handle volume controls globally
 			if len(msg.Runes) > 0 {
@@ -144,7 +178,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
-		
+
 		// Pass key messages to current view
 		switch a.currentView {
 		case ViewSearch:
@@ -153,7 +187,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if cmd != nil {
 				cmds = append(cmds, cmd)
 			}
-			
+
 			// Handle track selection from search
 			if selectedTrack := a.searchComponent.GetSelectedTrack(); selectedTrack != nil {
 				// Don't clear selection immediately - wait for playback result
@@ -164,7 +198,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					cmds = append(cmds, playerCmd)
 				}
 			}
-			
+
 		case ViewPlayer:
 			updatedPlayer, cmd := a.playerComponent.Update(msg)
 			a.playerComponent = updatedPlayer.(*player.PlayerComponent)
@@ -172,15 +206,15 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, cmd)
 			}
 		}
-		
+
 	case tea.WindowSizeMsg:
 		a.width = msg.Width
 		a.height = msg.Height
-		
+
 		// Update component sizes
 		a.searchComponent.SetSize(msg.Width, msg.Height-4) // Reserve space for header/footer
 		a.playerComponent.SetSize(msg.Width, msg.Height-4)
-		
+
 	case player.PlaybackStartedMsg:
 		// Playback started successfully - reset search state
 		a.searchComponent.ClearSelection()
@@ -188,7 +222,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Switch to player view to show playback
 		a.currentView = ViewPlayer
 		return a, nil
-		
+
 	case player.PlaybackFailedMsg:
 		// Playback failed - reset search state and show error
 		a.searchComponent.ClearSelection()
@@ -196,7 +230,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Stay in search view to let user try another track
 		// The error will be shown in the player component
 		return a, nil
-		
+
 	default:
 		// Pass other messages to components
 		updatedSearch, searchCmd := a.searchComponent.Update(msg)
@@ -204,14 +238,14 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if searchCmd != nil {
 			cmds = append(cmds, searchCmd)
 		}
-		
+
 		updatedPlayer, playerCmd := a.playerComponent.Update(msg)
 		a.playerComponent = updatedPlayer.(*player.PlayerComponent)
 		if playerCmd != nil {
 			cmds = append(cmds, playerCmd)
 		}
 	}
-	
+
 	return a, tea.Batch(cmds...)
 }
 
@@ -220,13 +254,13 @@ func (a *App) View() string {
 	if a.quitting {
 		return "Goodbye!\n"
 	}
-	
+
 	// Build the view
 	var view string
-	
+
 	// Header
 	header := a.renderHeader()
-	
+
 	// Main content based on current view
 	var content string
 	switch a.currentView {
@@ -237,10 +271,10 @@ func (a *App) View() string {
 	case ViewQueue:
 		content = "Queue view - Coming soon!"
 	}
-	
+
 	// Footer
 	footer := a.renderFooter()
-	
+
 	// Combine all parts
 	view = lipgloss.JoinVertical(
 		lipgloss.Left,
@@ -248,14 +282,15 @@ func (a *App) View() string {
 		content,
 		footer,
 	)
-	
+
 	return view
 }
 
 // renderHeader renders the application header
 func (a *App) renderHeader() string {
 	title := styles.TitleStyle.Render("SoundCloud TUI")
-	
+	auth := styles.StatusStyle.Render(a.authNotice)
+
 	// Navigation tabs
 	tabs := []string{}
 	for i, viewName := range []string{"Search", "Player", "Queue"} {
@@ -265,28 +300,29 @@ func (a *App) renderHeader() string {
 			tabs = append(tabs, styles.InactiveTabStyle.Render(viewName))
 		}
 	}
-	
+
 	tabBar := lipgloss.JoinHorizontal(lipgloss.Top, tabs...)
-	
+
 	// Combine title and tabs
 	header := lipgloss.JoinVertical(
 		lipgloss.Left,
 		title,
+		auth,
 		tabBar,
 	)
-	
+
 	return styles.HeaderStyle.Render(header)
 }
 
 // renderFooter renders the application footer
 func (a *App) renderFooter() string {
 	helpText := "Tab: Next View • Shift+Tab: Previous View • Ctrl+C: Quit"
-	
+
 	// Add global audio controls (work from any view)
 	if a.playerComponent.GetCurrentTrack() != nil {
 		helpText += " • Space: Play/Pause • ←→: Seek • +/-: Volume"
 	}
-	
+
 	// Add view-specific help
 	switch a.currentView {
 	case ViewSearch:
@@ -295,7 +331,7 @@ func (a *App) renderFooter() string {
 		// Player-specific controls already shown above
 		helpText += ""
 	}
-	
+
 	return styles.FooterStyle.Render(helpText)
 }
 

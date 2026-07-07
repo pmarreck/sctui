@@ -117,10 +117,15 @@ func NewClient() (*Client, error) {
 }
 
 // IsAuthenticated reports whether a logged-in browser session was found.
-func (c *Client) IsAuthenticated() bool { return c.authed }
+func (c *Client) IsAuthenticated() bool { return c != nil && c.authed }
 
 // AuthSource describes where the session came from (e.g. "Firefox (default)").
-func (c *Client) AuthSource() string { return c.authSource }
+func (c *Client) AuthSource() string {
+	if c == nil {
+		return ""
+	}
+	return c.authSource
+}
 
 // GetTrackInfo retrieves track information by URL
 func (c *Client) GetTrackInfo(url string) (*Track, error) {

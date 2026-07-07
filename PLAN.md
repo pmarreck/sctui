@@ -9,8 +9,8 @@ Done criteria:
 - [x] `soundcloud.Client.PlaylistTracks(id)` returns fully hydrated tracks from a
   playlist fixture, including shallow `/playlists/{id}` entries hydrated through
   `/tracks?ids=...`. Completed 2026-07-07 19:09 EDT.
-- [ ] The interactive TUI header surfaces whether the app is signed in or browsing
-  anonymously.
+- [x] The interactive TUI header surfaces whether the app is signed in or browsing
+  anonymously. Completed 2026-07-07 19:14 EDT.
 - [ ] The TUI has a playlist/library view: list playlists, drill into tracks, and
   send selected tracks to the existing player.
 - [ ] The TUI has a favorites view for liked tracks and can play selected tracks.
@@ -23,8 +23,9 @@ Next small behaviors:
 - [x] API behavior: add fixture-tested `FavoriteTracks()`.
   Curiosity poke: does the library endpoint return liked tracks directly, or do
   we need a separate paginated track-likes endpoint? Completed 2026-07-07 19:12 EDT.
-- [ ] TUI auth notice behavior: render signed-in source in the header.
+- [x] TUI auth notice behavior: render signed-in source in the header.
   Curiosity poke: how does the TUI behave if `Me()` fails after cookie discovery?
+  Completed 2026-07-07 19:14 EDT.
 - [ ] Library behavior: render playlists and drill into tracks without blocking
   the Bubble Tea update loop.
   Curiosity poke: what should a system playlist without a numeric playlist ID do?

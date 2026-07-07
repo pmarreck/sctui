@@ -155,6 +155,32 @@ func TestApp_BubbleTeaIntegration(t *testing.T) {
 	assert.Contains(t, view, "SoundCloud TUI") // Should contain app title
 }
 
+func TestApp_HeaderShowsAuthNotice(t *testing.T) {
+	t.Run("signed in", func(t *testing.T) {
+		application := app.NewAppWithDependencies(
+			&MockSoundCloudClient{Authenticated: true, AuthSourceValue: "Firefox (default)"},
+			&MockAudioPlayer{},
+			&MockStreamExtractor{},
+		)
+
+		view := application.View()
+		assert.Contains(t, view, "SoundCloud TUI")
+		assert.Contains(t, view, "Signed in via Firefox (default)")
+	})
+
+	t.Run("anonymous", func(t *testing.T) {
+		application := app.NewAppWithDependencies(
+			&MockSoundCloudClient{Authenticated: false},
+			&MockAudioPlayer{},
+			&MockStreamExtractor{},
+		)
+
+		view := application.View()
+		assert.Contains(t, view, "SoundCloud TUI")
+		assert.Contains(t, view, "anonymous")
+	})
+}
+
 func TestApp_StateManagement(t *testing.T) {
 	application := app.NewApp()
 
@@ -188,4 +214,3 @@ func TestApp_ErrorHandling(t *testing.T) {
 	assert.NotNil(t, updatedApp)
 	// Should not crash and return the app
 }
-
