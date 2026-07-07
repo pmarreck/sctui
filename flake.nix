@@ -42,8 +42,15 @@
           # below, not during the package build (keeps `nix build` lean).
           doCheck = false;
 
-          nativeBuildInputs = audioNativeInputs;
+          nativeBuildInputs = audioNativeInputs ++ [ pkgs.makeWrapper ];
           buildInputs = audioBuildInputs;
+
+          # sctui shells out to `sqlite3` to read the browser's SoundCloud
+          # session cookie; put it on the binary's PATH so auth works on a
+          # pristine system (it falls back to anonymous if truly absent).
+          postInstall = ''
+            wrapProgram $out/bin/sctui --prefix PATH : ${lib.makeBinPath [ pkgs.sqlite ]}
+          '';
 
           meta = {
             description = "SoundCloud terminal UI (search + stream playback)";
@@ -84,7 +91,8 @@
             # default checkPhase (its getGoDirs helper isn't set up here).
             doCheck = false;
 
-            nativeBuildInputs = audioNativeInputs;
+            # sqlite provides sqlite3 for the session-cookie round-trip test.
+            nativeBuildInputs = audioNativeInputs ++ [ pkgs.sqlite ];
             buildInputs = audioBuildInputs;
 
             # Replace the default compile step with the test run.
@@ -111,6 +119,7 @@
             pkgs.gopls
             pkgs.gotools
             pkgs.go-tools # staticcheck et al.
+            pkgs.sqlite # sqlite3, for reading the browser session cookie
           ]
           ++ audioNativeInputs
           ++ audioBuildInputs;

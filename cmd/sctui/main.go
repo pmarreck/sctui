@@ -48,6 +48,8 @@ func main() {
 		testAudioFlag string
 		testTuiFlag   string
 		helpFlag      bool
+		whoamiFlag    bool
+		playlistsFlag bool
 	)
 	// Long options use a double dash (--search); single-letter aliases use a
 	// single dash (-s) where a sensible letter is free.
@@ -59,12 +61,15 @@ func main() {
 	flag.StringVar(&playFlag, "p", "", "alias for --play")
 	flag.StringVar(&testAudioFlag, "test-audio", "", "Test audio playback without TUI")
 	flag.StringVar(&testTuiFlag, "test-tui", "", "Test TUI message flow without interactive mode")
+	flag.BoolVar(&whoamiFlag, "whoami", false, "Show the signed-in SoundCloud user")
+	flag.BoolVar(&playlistsFlag, "playlists", false, "List your personal playlists")
 	flag.BoolVar(&helpFlag, "help", false, "Show help")
 	flag.BoolVar(&helpFlag, "h", false, "alias for --help")
 
 	longNames := map[string]bool{
 		"search": true, "track": true, "play": true,
 		"test-audio": true, "test-tui": true, "help": true,
+		"whoami": true, "playlists": true,
 	}
 	if err := validateFlagStyle(os.Args[1:], longNames); err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)
@@ -83,6 +88,21 @@ func main() {
 	client, err := soundcloud.NewClient()
 	if err != nil {
 		log.Fatalf("Failed to create SoundCloud client: %v", err)
+	}
+	printAuthNotice(client)
+
+	if whoamiFlag {
+		if err := showWhoami(client); err != nil {
+			log.Fatalf("whoami failed: %v", err)
+		}
+		return
+	}
+
+	if playlistsFlag {
+		if err := showPlaylists(client); err != nil {
+			log.Fatalf("Failed to list playlists: %v", err)
+		}
+		return
 	}
 
 	if searchFlag != "" {
@@ -187,22 +207,63 @@ func min(a, b int) int {
 	return b
 }
 
+// printAuthNotice reports (to stderr) whether a logged-in browser session was
+// found, so the user knows if they're browsing as themselves or anonymously.
+func printAuthNotice(c *soundcloud.Client) {
+	if c.IsAuthenticated() {
+		fmt.Fprintf(os.Stderr, "🔓 Signed in via %s\n\n", c.AuthSource())
+	} else {
+		fmt.Fprintf(os.Stderr, "🔒 No browser session found — browsing SoundCloud anonymously.\n\n")
+	}
+}
+
+func showWhoami(c *soundcloud.Client) error {
+	me, err := c.Me()
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Signed in as:      %s (%s)\n", me.Username, me.FullName)
+	fmt.Printf("User ID:           %d\n", me.ID)
+	fmt.Printf("Followers:         %d\n", me.FollowersCount)
+	fmt.Printf("Private playlists: %d\n", me.PrivatePlaylistsCount)
+	return nil
+}
+
+func showPlaylists(c *soundcloud.Client) error {
+	pls, err := c.Library()
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Your library — %d playlists:\n\n", len(pls))
+	for _, p := range pls {
+		vis := ""
+		if p.IsPrivate() {
+			vis = " 🔒"
+		}
+		fmt.Printf("  [%-6s]%s %s — %d tracks\n", p.Kind, vis, p.Title, p.TrackCount)
+	}
+	return nil
+}
+
 func showDisclaimer() {
-	fmt.Println("⚠️  IMPORTANT DISCLAIMER ⚠️")
-	fmt.Println()
-	fmt.Println("This application uses SoundCloud's undocumented internal API")
-	fmt.Println("through a reverse-engineered Go library. This may violate")
-	fmt.Println("SoundCloud's Terms of Service.")
-	fmt.Println()
-	fmt.Println("By using this software, you acknowledge:")
-	fmt.Println("• This is for educational/personal use only")
-	fmt.Println("• You assume full responsibility for ToS compliance")
-	fmt.Println("• The functionality may break if SoundCloud changes their API")
-	fmt.Println("• Consider supporting artists through official channels")
-	fmt.Println()
-	fmt.Println("Use at your own discretion and risk.")
-	fmt.Println("═══════════════════════════════════════════════════════════")
-	fmt.Println()
+	// The disclaimer is metadata/warning output → stderr, so structured stdout
+	// (e.g. --playlists) stays pipeable.
+	w := os.Stderr
+	fmt.Fprintln(w, "⚠️  IMPORTANT DISCLAIMER ⚠️")
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "This application uses SoundCloud's undocumented internal API")
+	fmt.Fprintln(w, "through a reverse-engineered Go library. This may violate")
+	fmt.Fprintln(w, "SoundCloud's Terms of Service.")
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "By using this software, you acknowledge:")
+	fmt.Fprintln(w, "• This is for educational/personal use only")
+	fmt.Fprintln(w, "• You assume full responsibility for ToS compliance")
+	fmt.Fprintln(w, "• The functionality may break if SoundCloud changes their API")
+	fmt.Fprintln(w, "• Consider supporting artists through official channels")
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "Use at your own discretion and risk.")
+	fmt.Fprintln(w, "═══════════════════════════════════════════════════════════")
+	fmt.Fprintln(w)
 }
 
 // validateSoundCloudURL validates and normalizes a SoundCloud URL
@@ -523,9 +584,15 @@ Flags (long options take a double dash; single-letter aliases take one):
   --search, -s "query"   Search for tracks by keyword
   --track,  -t "url"     Get information for a specific track URL
   --play,   -p "url"     Play a specific track URL directly
+  --whoami               Show the signed-in SoundCloud user (if a browser session exists)
+  --playlists            List your personal playlists (owned, liked, followed)
   --test-audio "url"     Test audio playback without TUI (debug mode)
   --test-tui "url"       Test TUI message flow without interactive mode
   --help,   -h           Show this help message
+
+Auth: if you're logged into SoundCloud in Firefox, the app detects your
+session automatically and browses as you (personal/private playlists). No
+login step; otherwise it browses anonymously.
 
 Examples:
   %s --search "lofi hip hop"
