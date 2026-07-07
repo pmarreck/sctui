@@ -485,6 +485,16 @@ func (p *BufferedStreamPlayer) GetDuration() time.Duration {
 	return p.format.SampleRate.D(p.streamer.Len())
 }
 
+// getDurationLocked returns the track duration; the caller must already hold
+// p.mu (used by Seek, which holds the write lock — calling GetDuration there
+// would re-lock the RWMutex and self-deadlock).
+func (p *BufferedStreamPlayer) getDurationLocked() time.Duration {
+	if p.streamer == nil || p.format.SampleRate == 0 {
+		return 0
+	}
+	return p.format.SampleRate.D(p.streamer.Len())
+}
+
 // SetVolume sets playback volume (0.0 to 1.0)
 func (p *BufferedStreamPlayer) SetVolume(volume float64) error {
 	if volume < 0.0 || volume > 1.0 {
@@ -526,7 +536,7 @@ func (p *BufferedStreamPlayer) Seek(position time.Duration) error {
 		return fmt.Errorf("no audio stream loaded")
 	}
 
-	duration := p.GetDuration()
+	duration := p.getDurationLocked()
 	if position > duration {
 		return fmt.Errorf("position %s exceeds duration %s", position, duration)
 	}
