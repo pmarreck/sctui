@@ -17,18 +17,62 @@ import (
 	"soundcloud-tui/internal/ui/components/player"
 )
 
+// validateFlagStyle enforces the CLI convention: multi-letter options use a
+// double dash (--search); a single dash is reserved for single-letter flags
+// (-s). A single-dashed known long option (e.g. -search) is rejected with a
+// hint. Args after a literal "--" are positional and not checked.
+func validateFlagStyle(args []string, longNames map[string]bool) error {
+	for _, a := range args {
+		if a == "--" {
+			break
+		}
+		if a == "-" || !strings.HasPrefix(a, "-") || strings.HasPrefix(a, "--") {
+			continue
+		}
+		name := strings.TrimPrefix(a, "-")
+		if i := strings.IndexByte(name, '='); i >= 0 {
+			name = name[:i]
+		}
+		if len(name) > 1 && longNames[name] {
+			return fmt.Errorf("use a double dash for multi-letter options: --%s (not -%s)", name, name)
+		}
+	}
+	return nil
+}
+
 func main() {
 	var (
-		searchFlag = flag.String("search", "", "Search for tracks")
-		trackFlag  = flag.String("track", "", "Get info for a specific track URL")
-		playFlag   = flag.String("play", "", "Play a specific track URL directly")
-		testAudioFlag = flag.String("test-audio", "", "Test audio playback without TUI")
-		testTuiFlag   = flag.String("test-tui", "", "Test TUI message flow without interactive mode")
-		helpFlag   = flag.Bool("help", false, "Show help")
+		searchFlag    string
+		trackFlag     string
+		playFlag      string
+		testAudioFlag string
+		testTuiFlag   string
+		helpFlag      bool
 	)
+	// Long options use a double dash (--search); single-letter aliases use a
+	// single dash (-s) where a sensible letter is free.
+	flag.StringVar(&searchFlag, "search", "", "Search for tracks")
+	flag.StringVar(&searchFlag, "s", "", "alias for --search")
+	flag.StringVar(&trackFlag, "track", "", "Get info for a specific track URL")
+	flag.StringVar(&trackFlag, "t", "", "alias for --track")
+	flag.StringVar(&playFlag, "play", "", "Play a specific track URL directly")
+	flag.StringVar(&playFlag, "p", "", "alias for --play")
+	flag.StringVar(&testAudioFlag, "test-audio", "", "Test audio playback without TUI")
+	flag.StringVar(&testTuiFlag, "test-tui", "", "Test TUI message flow without interactive mode")
+	flag.BoolVar(&helpFlag, "help", false, "Show help")
+	flag.BoolVar(&helpFlag, "h", false, "alias for --help")
+
+	longNames := map[string]bool{
+		"search": true, "track": true, "play": true,
+		"test-audio": true, "test-tui": true, "help": true,
+	}
+	if err := validateFlagStyle(os.Args[1:], longNames); err != nil {
+		fmt.Fprintln(os.Stderr, "Error:", err)
+		os.Exit(2)
+	}
 	flag.Parse()
 
-	if *helpFlag {
+	if helpFlag {
 		showHelp()
 		return
 	}
@@ -41,36 +85,36 @@ func main() {
 		log.Fatalf("Failed to create SoundCloud client: %v", err)
 	}
 
-	if *searchFlag != "" {
-		if err := searchTracks(client, *searchFlag); err != nil {
+	if searchFlag != "" {
+		if err := searchTracks(client, searchFlag); err != nil {
 			log.Fatalf("Search failed: %v", err)
 		}
 		return
 	}
 
-	if *trackFlag != "" {
-		if err := getTrackInfo(client, *trackFlag); err != nil {
+	if trackFlag != "" {
+		if err := getTrackInfo(client, trackFlag); err != nil {
 			log.Fatalf("Failed to get track info: %v", err)
 		}
 		return
 	}
 
-	if *playFlag != "" {
-		if err := playTrackFromURL(client, *playFlag); err != nil {
+	if playFlag != "" {
+		if err := playTrackFromURL(client, playFlag); err != nil {
 			log.Fatalf("Failed to play track: %v", err)
 		}
 		return
 	}
 
-	if *testAudioFlag != "" {
-		if err := testAudioPlayback(client, *testAudioFlag); err != nil {
+	if testAudioFlag != "" {
+		if err := testAudioPlayback(client, testAudioFlag); err != nil {
 			log.Fatalf("Failed to test audio: %v", err)
 		}
 		return
 	}
 
-	if *testTuiFlag != "" {
-		if err := testTuiPlayback(client, *testTuiFlag); err != nil {
+	if testTuiFlag != "" {
+		if err := testTuiPlayback(client, testTuiFlag); err != nil {
 			log.Fatalf("Failed to test TUI: %v", err)
 		}
 		return
@@ -79,7 +123,7 @@ func main() {
 	// Start TUI application
 	application := app.NewApp()
 	program := tea.NewProgram(application, tea.WithAltScreen())
-	
+
 	if _, err := program.Run(); err != nil {
 		log.Fatalf("Failed to start TUI: %v", err)
 	}
@@ -87,7 +131,7 @@ func main() {
 
 func searchTracks(client *soundcloud.Client, query string) error {
 	fmt.Printf("🔍 Searching for: %s\n\n", query)
-	
+
 	tracks, err := client.Search(query)
 	if err != nil {
 		return fmt.Errorf("search failed: %w", err)
@@ -111,7 +155,7 @@ func searchTracks(client *soundcloud.Client, query string) error {
 
 func getTrackInfo(client *soundcloud.Client, url string) error {
 	fmt.Printf("🎵 Getting track info for: %s\n\n", url)
-	
+
 	track, err := client.GetTrackInfo(url)
 	if err != nil {
 		return fmt.Errorf("failed to get track info: %w", err)
@@ -165,54 +209,54 @@ func showDisclaimer() {
 func validateSoundCloudURL(url string) error {
 	// Remove whitespace and common prefixes
 	url = strings.TrimSpace(url)
-	
+
 	// Ensure it's a valid SoundCloud URL
 	soundcloudPattern := regexp.MustCompile(`^https?://(www\.|m\.)?soundcloud\.com/[^/]+/[^/?]+`)
 	if !soundcloudPattern.MatchString(url) {
 		return fmt.Errorf("invalid SoundCloud URL format. Expected: https://soundcloud.com/artist/track")
 	}
-	
+
 	return nil
 }
 
 // playTrackFromURL plays a track directly from a SoundCloud URL
 func playTrackFromURL(client *soundcloud.Client, url string) error {
 	fmt.Printf("🎵 Loading track from: %s\n\n", url)
-	
+
 	// Validate URL format
 	if err := validateSoundCloudURL(url); err != nil {
 		return err
 	}
-	
+
 	// Get track information
 	track, err := client.GetTrackInfo(url)
 	if err != nil {
 		return fmt.Errorf("failed to get track info: %w", err)
 	}
-	
+
 	fmt.Printf("Now playing: %s by %s\n", track.Title, track.User.FullName())
 	fmt.Printf("Duration: %s\n\n", formatDuration(track.Duration))
-	
+
 	// Create audio components with enhanced buffered streaming
 	audioPlayer := audio.NewBufferedBeepPlayer()
 	defer audioPlayer.Close()
-	
+
 	streamExtractor := audio.NewRealSoundCloudStreamExtractor(client)
-	
+
 	// Create player-only TUI
 	playerComponent := player.NewPlayerComponent(audioPlayer, streamExtractor)
-	
+
 	// Create simple app that only shows the player
 	playApp := &DirectPlayApp{
 		player: playerComponent,
 		track:  track,
 	}
-	
+
 	// Start the player TUI
 	fmt.Printf("Starting TUI player interface...\n")
 	program := tea.NewProgram(playApp, tea.WithAltScreen())
 	_, err = program.Run()
-	
+
 	return err
 }
 
@@ -241,27 +285,27 @@ func (a *DirectPlayApp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Type == tea.KeyCtrlC || msg.String() == "q" {
 			return a, tea.Quit
 		}
-		
+
 		// Pass all other keys to player
 		updatedPlayer, cmd := a.player.Update(msg)
 		a.player = updatedPlayer.(*player.PlayerComponent)
 		return a, cmd
-		
+
 	case tea.WindowSizeMsg:
 		a.width = msg.Width
 		a.height = msg.Height
 		a.player.SetSize(msg.Width, msg.Height-2) // Reserve space for title
 		return a, nil
-		
+
 	case player.PlaybackStartedMsg:
 		// Playback started successfully - just continue
 		return a, nil
-		
+
 	case player.PlaybackFailedMsg:
 		// Playback failed - show error and quit
 		fmt.Printf("\n❌ Playback failed: %v\n", msg.Error)
 		return a, tea.Quit
-		
+
 	default:
 		// Pass all other messages to player
 		updatedPlayer, cmd := a.player.Update(msg)
@@ -273,144 +317,144 @@ func (a *DirectPlayApp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (a *DirectPlayApp) View() string {
 	// Simple header
 	header := fmt.Sprintf("SoundCloud TUI - Direct Play Mode (Press 'q' or Ctrl+C to quit)")
-	
+
 	// Player view
 	playerView := a.player.View()
-	
+
 	return fmt.Sprintf("%s\n%s", header, playerView)
 }
 
 // testAudioPlayback tests audio playback without TUI interface
 func testAudioPlayback(client *soundcloud.Client, url string) error {
 	fmt.Printf("🔧 Testing audio playback without TUI for: %s\n\n", url)
-	
+
 	// Validate URL format
 	if err := validateSoundCloudURL(url); err != nil {
 		return err
 	}
-	
+
 	// Get track information
 	track, err := client.GetTrackInfo(url)
 	if err != nil {
 		return fmt.Errorf("failed to get track info: %w", err)
 	}
-	
+
 	fmt.Printf("Track: %s by %s\n", track.Title, track.User.FullName())
 	fmt.Printf("Duration: %s\n\n", formatDuration(track.Duration))
-	
+
 	// Create audio components with enhanced buffered streaming
 	audioPlayer := audio.NewBufferedBeepPlayer()
 	defer audioPlayer.Close()
-	
+
 	streamExtractor := audio.NewRealSoundCloudStreamExtractor(client)
-	
+
 	// Extract stream URL
 	fmt.Printf("Extracting stream URL...\n")
 	streamInfo, err := streamExtractor.ExtractStreamURL(context.Background(), track.ID)
 	if err != nil {
 		return fmt.Errorf("failed to extract stream URL: %w", err)
 	}
-	
+
 	fmt.Printf("Stream URL obtained: %s\n", streamInfo.URL[:50]+"...")
-	
+
 	// Start playback
 	fmt.Printf("Starting audio playback...\n")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	
+
 	err = audioPlayer.Play(ctx, streamInfo.URL)
 	if err != nil {
 		return fmt.Errorf("failed to start playback: %w", err)
 	}
-	
+
 	fmt.Printf("✅ Playback started successfully!\n")
 	fmt.Printf("Playing for 10 seconds to test stability...\n\n")
-	
+
 	// Monitor playback for 10 seconds
 	for i := 0; i < 10; i++ {
 		time.Sleep(1 * time.Second)
-		
+
 		state := audioPlayer.GetState()
 		position := audioPlayer.GetPosition()
 		duration := audioPlayer.GetDuration()
-		
-		fmt.Printf("Second %d: State=%s, Position=%v, Duration=%v\n", 
+
+		fmt.Printf("Second %d: State=%s, Position=%v, Duration=%v\n",
 			i+1, state.String(), position.Truncate(time.Millisecond), duration.Truncate(time.Millisecond))
-		
+
 		if state == audio.StateStopped {
 			fmt.Printf("❌ Playback stopped unexpectedly at second %d!\n", i+1)
 			break
 		}
 	}
-	
+
 	// Stop playback
 	fmt.Printf("\nStopping playback...\n")
 	audioPlayer.Stop()
-	
+
 	return nil
 }
 
 // testTuiPlayback simulates TUI message flow to test for differences vs direct audio
 func testTuiPlayback(client *soundcloud.Client, url string) error {
 	fmt.Printf("🔧 Testing TUI message flow for: %s\n\n", url)
-	
+
 	// Validate URL format
 	if err := validateSoundCloudURL(url); err != nil {
 		return err
 	}
-	
+
 	// Get track information
 	track, err := client.GetTrackInfo(url)
 	if err != nil {
 		return fmt.Errorf("failed to get track info: %w", err)
 	}
-	
+
 	fmt.Printf("Track: %s by %s\n", track.Title, track.User.FullName())
 	fmt.Printf("Duration: %s\n\n", formatDuration(track.Duration))
-	
+
 	// Create audio components (same as TUI)
 	audioPlayer := audio.NewBeepPlayer()
 	defer audioPlayer.Close()
-	
+
 	streamExtractor := audio.NewRealSoundCloudStreamExtractor(client)
 	playerComponent := player.NewPlayerComponent(audioPlayer, streamExtractor)
-	
+
 	// Simulate TUI initialization
 	fmt.Printf("Simulating TUI message flow...\n")
-	
+
 	// Step 1: Init player component
 	initCmd := playerComponent.Init()
 	if initCmd != nil {
 		fmt.Printf("Player component initialized\n")
 	}
-	
+
 	// Step 2: Send PlayTrackMsg (like TUI does)
 	fmt.Printf("Sending PlayTrackMsg...\n")
 	playMsg := player.PlayTrackMsg{Track: track}
 	updatedPlayer, cmd := playerComponent.Update(playMsg)
 	playerComponent = updatedPlayer.(*player.PlayerComponent)
-	
+
 	// Step 3: Execute the command (stream extraction)
 	if cmd != nil {
 		fmt.Printf("Executing stream extraction command...\n")
 		msg := cmd()
-		
+
 		// Step 4: Handle StreamInfoMsg
 		if streamMsg, ok := msg.(player.StreamInfoMsg); ok {
 			if streamMsg.Error != nil {
 				return fmt.Errorf("stream extraction failed: %w", streamMsg.Error)
 			}
-			
+
 			fmt.Printf("Stream URL extracted, sending StreamInfoMsg...\n")
 			updatedPlayer, playCmd := playerComponent.Update(streamMsg)
 			playerComponent = updatedPlayer.(*player.PlayerComponent)
-			
+
 			// Step 5: Execute play command (it's a batch)
 			if playCmd != nil {
 				fmt.Printf("Executing play command batch...\n")
 				playResult := playCmd()
 				fmt.Printf("Play command result type: %T\n", playResult)
-				
+
 				// Handle BatchMsg - execute all commands in the batch
 				if batchMsg, ok := playResult.(tea.BatchMsg); ok {
 					fmt.Printf("Handling batch with %d commands\n", len(batchMsg))
@@ -418,7 +462,7 @@ func testTuiPlayback(client *soundcloud.Client, url string) error {
 						fmt.Printf("Executing batch command %d...\n", i+1)
 						cmdResult := cmd()
 						fmt.Printf("Batch command %d result type: %T\n", i+1, cmdResult)
-						
+
 						// Update player with each result
 						updatedPlayer, _ := playerComponent.Update(cmdResult)
 						playerComponent = updatedPlayer.(*player.PlayerComponent)
@@ -427,7 +471,7 @@ func testTuiPlayback(client *soundcloud.Client, url string) error {
 					// Handle single command result
 					updatedPlayer, progressCmd := playerComponent.Update(playResult)
 					playerComponent = updatedPlayer.(*player.PlayerComponent)
-					
+
 					// Execute progress command if available
 					if progressCmd != nil {
 						fmt.Printf("Executing initial progress command...\n")
@@ -439,33 +483,33 @@ func testTuiPlayback(client *soundcloud.Client, url string) error {
 			}
 		}
 	}
-	
+
 	fmt.Printf("✅ TUI simulation started!\n")
 	fmt.Printf("Waiting 1 second for playback to initialize...\n")
 	time.Sleep(1 * time.Second)
 	fmt.Printf("Monitoring for 10 seconds to compare with test-audio...\n\n")
-	
+
 	// Monitor playback for 10 seconds (same as test-audio)
 	for i := 0; i < 10; i++ {
 		time.Sleep(1 * time.Second)
-		
+
 		state := audioPlayer.GetState()
 		position := audioPlayer.GetPosition()
 		duration := audioPlayer.GetDuration()
-		
-		fmt.Printf("Second %d: State=%s, Position=%v, Duration=%v\n", 
+
+		fmt.Printf("Second %d: State=%s, Position=%v, Duration=%v\n",
 			i+1, state.String(), position.Truncate(time.Millisecond), duration.Truncate(time.Millisecond))
-		
+
 		if state == audio.StateStopped {
 			fmt.Printf("❌ Playback stopped unexpectedly at second %d! (TUI simulation)\n", i+1)
 			break
 		}
 	}
-	
+
 	// Stop playback
 	fmt.Printf("\nStopping playback...\n")
 	audioPlayer.Stop()
-	
+
 	return nil
 }
 
@@ -475,21 +519,21 @@ func showHelp() {
 Usage:
   %s [flags]
 
-Flags:
-  -search "query"    Search for tracks by keyword
-  -track "url"       Get information for a specific track URL
-  -play "url"        Play a specific track URL directly
-  -test-audio "url"  Test audio playback without TUI (debug mode)
-  -test-tui "url"    Test TUI message flow without interactive mode
-  -help              Show this help message
+Flags (long options take a double dash; single-letter aliases take one):
+  --search, -s "query"   Search for tracks by keyword
+  --track,  -t "url"     Get information for a specific track URL
+  --play,   -p "url"     Play a specific track URL directly
+  --test-audio "url"     Test audio playback without TUI (debug mode)
+  --test-tui "url"       Test TUI message flow without interactive mode
+  --help,   -h           Show this help message
 
 Examples:
-  %s -search "lofi hip hop"
-  %s -track "https://soundcloud.com/artist/track"
-  %s -play "https://soundcloud.com/artist/track"
-  %s -test-audio "https://soundcloud.com/artist/track"
-  %s -test-tui "https://soundcloud.com/artist/track"
-  %s                 # Start interactive TUI
+  %s --search "lofi hip hop"
+  %s --track "https://soundcloud.com/artist/track"
+  %s -p "https://soundcloud.com/artist/track"
+  %s --test-audio "https://soundcloud.com/artist/track"
+  %s --test-tui "https://soundcloud.com/artist/track"
+  %s                     # Start interactive TUI
 
 Note: This application uses SoundCloud's undocumented API.
 See disclaimer above for important legal considerations.
