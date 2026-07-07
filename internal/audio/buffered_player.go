@@ -731,7 +731,7 @@ func (b *StreamBuffer) write(data []byte) {
 func (b *StreamBuffer) isPreloaded() bool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.preloaded
+	return b.preloaded || (b.completed && b.writePos > 0)
 }
 
 func (b *StreamBuffer) isHealthy() bool {

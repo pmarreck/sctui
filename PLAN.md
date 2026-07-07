@@ -24,6 +24,9 @@ Done criteria:
 - [x] Large playlists hydrate shallow track IDs in batches so 499-item playlists
   do not fail on an oversized `/tracks?ids=...` request.
   Completed 2026-07-07 19:30 EDT.
+- [x] Short playable tracks start after completed download even when the file is
+  smaller than the 1MB preload threshold.
+  Completed 2026-07-07 19:39 EDT.
 - [ ] `./test` and `./build` pass before each commit.
 
 Next small behaviors:
@@ -54,6 +57,10 @@ Next small behaviors:
 - [x] Bug fix: split large playlist track hydration into bounded batches.
   Curiosity poke: can an 8-track playlist pass while a 499-track playlist fails
   from URL/request-size limits? Completed 2026-07-07 19:30 EDT.
+- [x] Bug fix: completed short downloads count as preloaded for the buffered
+  player.
+  Curiosity poke: can a valid playable track fail locally just because it never
+  reaches the preload byte threshold? Completed 2026-07-07 19:39 EDT.
 
 ## Current Status (December 2024)
 

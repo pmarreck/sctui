@@ -122,6 +122,19 @@ func TestBufferedStreamPlayer_ContextCancellation(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestBufferedStreamPlayer_PlayShortCompletedDownload(t *testing.T) {
+	shortWAV := makeTestWAV(8000, 8000)
+	player := audio.NewBufferedStreamPlayer(
+		audio.WithBufferedHTTPClient(newWAVResponder(shortWAV)),
+		audio.WithPreloadTimeout(300*time.Millisecond),
+	)
+	defer player.Close()
+
+	err := player.Play(context.Background(), "https://example.com/short.wav")
+	require.NoError(t, err)
+	assert.Equal(t, audio.StatePlaying, player.GetState())
+}
+
 func TestBufferedStreamPlayer_SeekOperations(t *testing.T) {
 	player := audio.NewBufferedStreamPlayer()
 	defer player.Close()
