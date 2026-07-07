@@ -20,6 +20,9 @@ Next small behaviors:
 - [x] API behavior: add fixture-tested `PlaylistTracks(id)`.
   Curiosity poke: what breaks when the playlist payload mixes full tracks and
   ID-only shallow tracks? Completed 2026-07-07 19:09 EDT.
+- [x] API behavior: add fixture-tested `FavoriteTracks()`.
+  Curiosity poke: does the library endpoint return liked tracks directly, or do
+  we need a separate paginated track-likes endpoint? Completed 2026-07-07 19:12 EDT.
 - [ ] TUI auth notice behavior: render signed-in source in the header.
   Curiosity poke: how does the TUI behave if `Me()` fails after cookie discovery?
 - [ ] Library behavior: render playlists and drill into tracks without blocking

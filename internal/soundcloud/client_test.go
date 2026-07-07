@@ -86,3 +86,69 @@ func TestPlaylistTracksHydratesShallowTracks(t *testing.T) {
 		t.Fatalf("unexpected API requests:\n got: %#v\nwant: %#v", seen, wantRequests)
 	}
 }
+
+func TestFavoriteTracksParsesLikedTracks(t *testing.T) {
+	var seen []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = append(seen, r.URL.RequestURI())
+		w.Header().Set("Content-Type", "application/json")
+
+		switch r.URL.RequestURI() {
+		case "/me/track_likes?limit=200&linked_partitioning=1":
+			fmt.Fprint(w, `{
+				"collection": [
+					{
+						"track": {
+							"id": 404,
+							"title": "Liked fixture track",
+							"duration": 184000,
+							"permalink_url": "https://soundcloud.com/peter/liked",
+							"user": {"id": 4, "username": "likedartist"}
+						}
+					},
+					{"track": null},
+					{
+						"track": {
+							"id": 505,
+							"title": "Another favorite",
+							"duration": 205000,
+							"user": {"id": 5, "username": "anotherartist"}
+						}
+					}
+				]
+			}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := &Client{
+		httpClient:   server.Client(),
+		authed:       true,
+		apiV2BaseURL: server.URL,
+	}
+
+	tracks, err := client.FavoriteTracks()
+	if err != nil {
+		t.Fatalf("FavoriteTracks returned error: %v", err)
+	}
+
+	gotTitles := make([]string, 0, len(tracks))
+	for _, track := range tracks {
+		gotTitles = append(gotTitles, track.Title)
+	}
+	wantTitles := []string{"Liked fixture track", "Another favorite"}
+	if !reflect.DeepEqual(gotTitles, wantTitles) {
+		t.Fatalf("favorite tracks mismatch:\n got: %#v\nwant: %#v", gotTitles, wantTitles)
+	}
+
+	if tracks[0].Artist() != "likedartist" || tracks[1].Duration != 205000 {
+		t.Fatalf("favorite track metadata missing: %#v", tracks)
+	}
+
+	wantRequests := []string{"/me/track_likes?limit=200&linked_partitioning=1"}
+	if !reflect.DeepEqual(seen, wantRequests) {
+		t.Fatalf("unexpected API requests:\n got: %#v\nwant: %#v", seen, wantRequests)
+	}
+}

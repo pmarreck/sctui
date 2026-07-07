@@ -417,3 +417,29 @@ func (c *Client) PlaylistTracks(playlistID int64) ([]Track, error) {
 
 	return tracks, nil
 }
+
+// FavoriteTracks returns the signed-in user's liked tracks for the Favorites
+// tab, using SoundCloud's api-v2 track-likes collection.
+func (c *Client) FavoriteTracks() ([]Track, error) {
+	if !c.authed {
+		return nil, fmt.Errorf("not signed in (no browser session found)")
+	}
+
+	var resp struct {
+		Collection []struct {
+			Track *v2Track `json:"track"`
+		} `json:"collection"`
+	}
+	if err := c.getV2("/me/track_likes?limit=200&linked_partitioning=1", &resp); err != nil {
+		return nil, err
+	}
+
+	out := make([]Track, 0, len(resp.Collection))
+	for _, it := range resp.Collection {
+		if it.Track == nil {
+			continue
+		}
+		out = append(out, it.Track.toTrack())
+	}
+	return out, nil
+}
