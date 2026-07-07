@@ -2,7 +2,6 @@ package ui_test
 
 import (
 	"testing"
-	"time"
 
 	"github.com/charmbracelet/bubbletea"
 	"github.com/stretchr/testify/assert"
@@ -211,7 +210,7 @@ func TestVolumeControls_VolumeDisplay(t *testing.T) {
 
 			// Should contain the appropriate volume icon
 			assert.Contains(t, view, tt.expectedIcon)
-			
+
 			// Should contain the percentage
 			assert.Contains(t, view, tt.expectedText)
 		})
@@ -235,34 +234,34 @@ func TestVolumeControls_KeyboardShortcuts(t *testing.T) {
 	playerComponent.SetState(player.StatePlaying)
 
 	tests := []struct {
-		name           string
-		key            string
-		shouldHaveCmd  bool
-		description    string
+		name          string
+		key           string
+		shouldHaveCmd bool
+		description   string
 	}{
 		{
-			name:           "plus key increases volume",
-			key:            "+",
-			shouldHaveCmd:  true,
-			description:    "Plus key should generate volume increase command",
+			name:          "plus key increases volume",
+			key:           "+",
+			shouldHaveCmd: true,
+			description:   "Plus key should generate volume increase command",
 		},
 		{
-			name:           "equals key increases volume",
-			key:            "=",
-			shouldHaveCmd:  true,
-			description:    "Equals key should generate volume increase command",
+			name:          "equals key increases volume",
+			key:           "=",
+			shouldHaveCmd: true,
+			description:   "Equals key should generate volume increase command",
 		},
 		{
-			name:           "minus key decreases volume",
-			key:            "-",
-			shouldHaveCmd:  true,
-			description:    "Minus key should generate volume decrease command",
+			name:          "minus key decreases volume",
+			key:           "-",
+			shouldHaveCmd: true,
+			description:   "Minus key should generate volume decrease command",
 		},
 		{
-			name:           "invalid key does nothing",
-			key:            "x",
-			shouldHaveCmd:  false,
-			description:    "Invalid key should not generate volume command",
+			name:          "invalid key does nothing",
+			key:           "x",
+			shouldHaveCmd: false,
+			description:   "Invalid key should not generate volume command",
 		},
 	}
 
@@ -300,15 +299,15 @@ func TestVolumeControls_VolumeSteps(t *testing.T) {
 
 	// Test multiple volume increments
 	initialVolume := mockPlayer.GetVolume()
-	
+
 	// Increase volume 5 times
 	for i := 0; i < 5; i++ {
 		plusMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'+'}}
 		updatedComponent, cmd := playerComponent.Update(plusMsg)
 		playerComponent = updatedComponent.(*player.PlayerComponent)
-		
+
 		assert.NotNil(t, cmd) // Should always return a command
-		
+
 		// Simulate command execution with 10% increment
 		newVolume := mockPlayer.GetVolume() + 0.1
 		if newVolume > 1.0 {
@@ -331,7 +330,7 @@ func TestVolumeControls_VolumeInIdleState(t *testing.T) {
 	}
 
 	playerComponent := player.NewPlayerComponent(mockPlayer, nil)
-	
+
 	// No track set - should still handle volume controls
 	assert.Equal(t, player.StateIdle, playerComponent.GetState())
 
@@ -394,7 +393,7 @@ func TestVolumeControls_RapidVolumeChanges(t *testing.T) {
 		playerComponent = updatedComponent.(*player.PlayerComponent)
 
 		assert.NotNil(t, cmd) // Should always return a command
-		
+
 		// Simulate some volume change
 		if key == "+" {
 			newVol := mockPlayer.GetVolume() + 0.1

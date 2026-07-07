@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Run the full test suite via nix in the sandboxed CI check (the same
+# derivation Garnix evaluates). No network or audio device required.
+# NOTE: intentionally NOT `set -e` — let nix's exit code report failures.
+set -u
+cd "$(dirname "$0")" || exit 1
+
+system="$(nix eval --raw --impure --expr builtins.currentSystem)"
+echo "Running test suite via nix (checks.${system}.test)..." >&2
+nix build ".#checks.${system}.test" --print-build-logs "$@"

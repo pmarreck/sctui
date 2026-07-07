@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/stretchr/testify/assert"
 
 	"soundcloud-tui/internal/audio"
@@ -16,45 +17,45 @@ import (
 
 func TestProgressDisplay_ProgressBarAccuracy(t *testing.T) {
 	tests := []struct {
-		name       string
-		position   time.Duration
-		duration   time.Duration
-		barWidth   int
+		name              string
+		position          time.Duration
+		duration          time.Duration
+		barWidth          int
 		expectedFillWidth int
 	}{
 		{
-			name:       "25% progress",
-			position:   30 * time.Second,
-			duration:   120 * time.Second,
-			barWidth:   40,
+			name:              "25% progress",
+			position:          30 * time.Second,
+			duration:          120 * time.Second,
+			barWidth:          40,
 			expectedFillWidth: 10,
 		},
 		{
-			name:       "50% progress",
-			position:   60 * time.Second,
-			duration:   120 * time.Second,
-			barWidth:   40,
+			name:              "50% progress",
+			position:          60 * time.Second,
+			duration:          120 * time.Second,
+			barWidth:          40,
 			expectedFillWidth: 20,
 		},
 		{
-			name:       "75% progress",
-			position:   90 * time.Second,
-			duration:   120 * time.Second,
-			barWidth:   40,
+			name:              "75% progress",
+			position:          90 * time.Second,
+			duration:          120 * time.Second,
+			barWidth:          40,
 			expectedFillWidth: 30,
 		},
 		{
-			name:       "100% progress",
-			position:   120 * time.Second,
-			duration:   120 * time.Second,
-			barWidth:   40,
+			name:              "100% progress",
+			position:          120 * time.Second,
+			duration:          120 * time.Second,
+			barWidth:          40,
 			expectedFillWidth: 40,
 		},
 		{
-			name:       "0% progress",
-			position:   0,
-			duration:   120 * time.Second,
-			barWidth:   40,
+			name:              "0% progress",
+			position:          0,
+			duration:          120 * time.Second,
+			barWidth:          40,
 			expectedFillWidth: 0,
 		},
 	}
@@ -63,13 +64,14 @@ func TestProgressDisplay_ProgressBarAccuracy(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			progress := float64(tt.position) / float64(tt.duration)
 			progressBar := styles.RenderProgressBar(tt.barWidth, progress)
-			
-			// Progress bar should not be empty
+
 			assert.NotEmpty(t, progressBar)
-			
-			// Progress bar width should match expected
-			// Note: This is a visual test - exact implementation may vary
-			assert.LessOrEqual(t, len(progressBar), tt.barWidth*2) // Account for styling
+
+			// The bar must occupy exactly barWidth display columns. Block
+			// glyphs are multibyte and ANSI-styled, so measure display width
+			// (lipgloss.Width strips ANSI and accounts for cell width), not
+			// byte length.
+			assert.Equal(t, tt.barWidth, lipgloss.Width(progressBar))
 		})
 	}
 }
@@ -127,37 +129,37 @@ func TestProgressDisplay_PlayerProgressRendering(t *testing.T) {
 		duration: 180 * time.Second,
 		volume:   0.75,
 	}
-	
+
 	playerComponent := player.NewPlayerComponent(mockPlayer, nil)
-	
+
 	track := &soundcloud.Track{
 		ID:       123,
 		Title:    "Test Track",
 		User:     soundcloud.User{Username: "Test Artist"},
 		Duration: 180000, // 3 minutes in ms
 	}
-	
+
 	playerComponent.SetCurrentTrack(track)
 	playerComponent.SetState(player.StatePlaying)
-	
+
 	// Update with progress
 	progressMsg := player.ProgressUpdateMsg{
 		Position: 45 * time.Second,
 		Duration: 180 * time.Second,
 	}
-	
+
 	updatedComponent, _ := playerComponent.Update(progressMsg)
 	playerComponent = updatedComponent.(*player.PlayerComponent)
-	
+
 	view := playerComponent.View()
-	
+
 	// Should contain formatted time
 	assert.Contains(t, view, "0:45") // Current position
 	assert.Contains(t, view, "3:00") // Total duration
-	
+
 	// Should show progress indicator
 	assert.Contains(t, view, "▶") // Playing indicator
-	
+
 	// Should show progress bar (visual element present)
 	// Note: Exact progress bar format depends on implementation
 	assert.NotEmpty(t, view)
@@ -165,45 +167,45 @@ func TestProgressDisplay_PlayerProgressRendering(t *testing.T) {
 
 func TestProgressDisplay_ProgressBarEdgeCases(t *testing.T) {
 	tests := []struct {
-		name     string
-		width    int
-		progress float64
+		name           string
+		width          int
+		progress       float64
 		shouldNotPanic bool
 	}{
 		{
-			name:     "zero width",
-			width:    0,
-			progress: 0.5,
+			name:           "zero width",
+			width:          0,
+			progress:       0.5,
 			shouldNotPanic: true,
 		},
 		{
-			name:     "negative width",
-			width:    -5,
-			progress: 0.5,
+			name:           "negative width",
+			width:          -5,
+			progress:       0.5,
 			shouldNotPanic: true,
 		},
 		{
-			name:     "progress over 100%",
-			width:    40,
-			progress: 1.5,
+			name:           "progress over 100%",
+			width:          40,
+			progress:       1.5,
 			shouldNotPanic: true,
 		},
 		{
-			name:     "negative progress",
-			width:    40,
-			progress: -0.2,
+			name:           "negative progress",
+			width:          40,
+			progress:       -0.2,
 			shouldNotPanic: true,
 		},
 		{
-			name:     "very small width",
-			width:    1,
-			progress: 0.5,
+			name:           "very small width",
+			width:          1,
+			progress:       0.5,
 			shouldNotPanic: true,
 		},
 		{
-			name:     "very large width",
-			width:    1000,
-			progress: 0.5,
+			name:           "very large width",
+			width:          1000,
+			progress:       0.5,
 			shouldNotPanic: true,
 		},
 	}
@@ -215,9 +217,9 @@ func TestProgressDisplay_ProgressBarEdgeCases(t *testing.T) {
 					t.Errorf("Progress bar rendering panicked: %v", r)
 				}
 			}()
-			
+
 			progressBar := styles.RenderProgressBar(tt.width, tt.progress)
-			
+
 			// Should return some result (even if empty for invalid inputs)
 			if tt.width > 0 {
 				assert.NotNil(t, progressBar)
@@ -245,7 +247,7 @@ func TestProgressDisplay_VolumeDisplay(t *testing.T) {
 		{
 			name:           "medium volume",
 			volume:         0.50,
-			expectedFormat: "🔉 50%",
+			expectedFormat: "🔊 50%",
 		},
 		{
 			name:           "high volume",
@@ -265,33 +267,22 @@ func TestProgressDisplay_VolumeDisplay(t *testing.T) {
 				state:  audio.StatePlaying,
 				volume: tt.volume,
 			}
-			
+
 			playerComponent := player.NewPlayerComponent(mockPlayer, nil)
-			
+
 			track := &soundcloud.Track{
 				ID:    123,
 				Title: "Test Track",
 				User:  soundcloud.User{Username: "Test Artist"},
 			}
-			
+
 			playerComponent.SetCurrentTrack(track)
 			playerComponent.SetState(player.StatePlaying)
-			
+
 			view := playerComponent.View()
-			
-			// Should contain volume percentage
-			volumePercent := int(tt.volume * 100)
-			assert.Contains(t, view, "🔊") // Volume icon
-			
-			// Should show volume percentage somewhere in the view
-			// Note: Exact format may vary based on implementation
-			if volumePercent == 0 {
-				// Special case for muted
-				assert.Contains(t, view, "0%")
-			} else {
-				// Should contain the percentage
-				assert.Contains(t, view, "%")
-			}
+
+			// Should show the icon + percentage matching the player volume.
+			assert.Contains(t, view, tt.expectedFormat)
 		})
 	}
 }
@@ -303,18 +294,18 @@ func TestProgressDisplay_RealTimeUpdates(t *testing.T) {
 		duration: 180 * time.Second,
 		volume:   1.0,
 	}
-	
+
 	playerComponent := player.NewPlayerComponent(mockPlayer, nil)
-	
+
 	track := &soundcloud.Track{
 		ID:    123,
 		Title: "Test Track",
 		User:  soundcloud.User{Username: "Test Artist"},
 	}
-	
+
 	playerComponent.SetCurrentTrack(track)
 	playerComponent.SetState(player.StatePlaying)
-	
+
 	// Simulate progress updates over time
 	positions := []time.Duration{
 		10 * time.Second,
@@ -322,28 +313,28 @@ func TestProgressDisplay_RealTimeUpdates(t *testing.T) {
 		60 * time.Second,
 		90 * time.Second,
 	}
-	
+
 	for i, pos := range positions {
 		progressMsg := player.ProgressUpdateMsg{
 			Position: pos,
 			Duration: 180 * time.Second,
 		}
-		
+
 		updatedComponent, cmd := playerComponent.Update(progressMsg)
 		playerComponent = updatedComponent.(*player.PlayerComponent)
-		
+
 		// Should update position
 		assert.Equal(t, pos, playerComponent.GetPosition())
-		
+
 		// Should return tick command for continued updates
 		assert.NotNil(t, cmd)
-		
+
 		view := playerComponent.View()
-		
+
 		// Should show updated time
 		timeStr := formatDurationForDisplay(pos)
 		assert.Contains(t, view, timeStr)
-		
+
 		// Progress should increase over time
 		if i > 0 {
 			// Visual progress should be advancing (hard to test exactly)
@@ -359,46 +350,46 @@ func TestProgressDisplay_SeekUpdatesProgress(t *testing.T) {
 		duration: 180 * time.Second,
 		volume:   1.0,
 	}
-	
+
 	playerComponent := player.NewPlayerComponent(mockPlayer, nil)
-	
+
 	track := &soundcloud.Track{
 		ID:    123,
 		Title: "Test Track",
 		User:  soundcloud.User{Username: "Test Artist"},
 	}
-	
+
 	playerComponent.SetCurrentTrack(track)
 	playerComponent.SetState(player.StatePlaying)
-	
+
 	// Update to initial position
 	progressMsg := player.ProgressUpdateMsg{
 		Position: 60 * time.Second,
 		Duration: 180 * time.Second,
 	}
-	
+
 	updatedComponent, _ := playerComponent.Update(progressMsg)
 	playerComponent = updatedComponent.(*player.PlayerComponent)
-	
+
 	initialView := playerComponent.View()
 	assert.Contains(t, initialView, "1:00")
-	
+
 	// Seek forward
 	rightMsg := tea.KeyMsg{Type: tea.KeyRight}
 	updatedComponent, seekCmd := playerComponent.Update(rightMsg)
 	playerComponent = updatedComponent.(*player.PlayerComponent)
-	
+
 	assert.NotNil(t, seekCmd) // Should return seek command
-	
+
 	// Simulate seek completion - position should update
 	newProgressMsg := player.ProgressUpdateMsg{
 		Position: 70 * time.Second, // Simulated new position after seek
 		Duration: 180 * time.Second,
 	}
-	
+
 	updatedComponent, _ = playerComponent.Update(newProgressMsg)
 	playerComponent = updatedComponent.(*player.PlayerComponent)
-	
+
 	newView := playerComponent.View()
 	assert.Contains(t, newView, "1:10") // Should show new position
 }
@@ -408,10 +399,10 @@ func formatDurationForDisplay(d time.Duration) string {
 	if d <= 0 {
 		return "0:00"
 	}
-	
+
 	totalSeconds := int(d.Seconds())
 	minutes := totalSeconds / 60
 	seconds := totalSeconds % 60
-	
+
 	return fmt.Sprintf("%d:%02d", minutes, seconds)
 }

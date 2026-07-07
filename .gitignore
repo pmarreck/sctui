@@ -52,3 +52,11 @@ config.local.*
 # Temporary files
 tmp/
 temp/
+
+# Nix build outputs
+result
+result-*
+
+# Per-machine agent symlinks (point outside the repo; never commit)
+AGENTS.md
+jj_cheatsheet.md

@@ -73,42 +73,95 @@ type Player interface {
 	Close() error
 }
 
-// BeepPlayer implements Player using the Beep audio library
-type BeepPlayer struct {
-	mu              sync.RWMutex
-	state           PlayerState
-	volume          float64
-	
-	// Beep components
-	streamer        beep.StreamSeekCloser
-	format          beep.Format
-	ctrl            *beep.Ctrl
-	volumeCtrl      *effects.Volume
-	
-	// Speaker management
-	speakerInit     sync.Once
-	speakerInitErr  error
-	
-	// Stream information
-	streamURL       string
-	httpClient      *http.Client
+// AudioSink is the audio-output port of the player (hexagonal architecture):
+// it abstracts the physical speaker so the player can be driven headlessly.
+// The production adapter (speakerSink) wraps github.com/gopxl/beep/speaker;
+// tests inject a fake so playback logic can be exercised without an audio
+// device.
+type AudioSink interface {
+	Init(sampleRate beep.SampleRate, bufferSize int) error
+	Play(streamers ...beep.Streamer)
+	Lock()
+	Unlock()
 }
 
-// NewBeepPlayer creates a new Beep-based audio player
-func NewBeepPlayer() *BeepPlayer {
-	return &BeepPlayer{
-		state:      StateStopped,
-		volume:     1.0, // Default full volume
+// speakerSink is the production AudioSink adapter backed by the global beep speaker.
+type speakerSink struct{}
+
+func (speakerSink) Init(sampleRate beep.SampleRate, bufferSize int) error {
+	return speaker.Init(sampleRate, bufferSize)
+}
+func (speakerSink) Play(streamers ...beep.Streamer) { speaker.Play(streamers...) }
+func (speakerSink) Lock()                           { speaker.Lock() }
+func (speakerSink) Unlock()                         { speaker.Unlock() }
+
+// BeepOption configures a BeepPlayer at construction (dependency-injection seam).
+type BeepOption func(*BeepPlayer)
+
+// WithHTTPClient injects the HTTP client used to fetch streams. Tests supply a
+// client whose RoundTripper serves canned audio so no network is required.
+func WithHTTPClient(c *http.Client) BeepOption {
+	return func(p *BeepPlayer) {
+		if c != nil {
+			p.httpClient = c
+		}
+	}
+}
+
+// WithAudioSink injects the audio-output port. Tests supply a headless fake so
+// no real audio device is needed.
+func WithAudioSink(s AudioSink) BeepOption {
+	return func(p *BeepPlayer) {
+		if s != nil {
+			p.sink = s
+		}
+	}
+}
+
+// BeepPlayer implements Player using the Beep audio library
+type BeepPlayer struct {
+	mu     sync.RWMutex
+	state  PlayerState
+	volume float64
+
+	// Beep components
+	streamer   beep.StreamSeekCloser
+	format     beep.Format
+	ctrl       *beep.Ctrl
+	volumeCtrl *effects.Volume
+
+	// Audio output port (injectable) + one-time init guard
+	sink           AudioSink
+	speakerInit    sync.Once
+	speakerInitErr error
+
+	// Stream information
+	streamURL  string
+	httpClient *http.Client
+}
+
+// NewBeepPlayer creates a new Beep-based audio player. By default it uses the
+// real speaker and a real HTTP client; pass options (WithAudioSink,
+// WithHTTPClient) to inject fakes for headless/offline testing.
+func NewBeepPlayer(opts ...BeepOption) *BeepPlayer {
+	p := &BeepPlayer{
+		state:  StateStopped,
+		volume: 1.0, // Default full volume
+		sink:   speakerSink{},
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 			Transport: &http.Transport{
-				MaxIdleConns:        10,
-				IdleConnTimeout:     30 * time.Second,
-				DisableCompression:  false,
-				MaxConnsPerHost:     5,
+				MaxIdleConns:       10,
+				IdleConnTimeout:    30 * time.Second,
+				DisableCompression: false,
+				MaxConnsPerHost:    5,
 			},
 		},
 	}
+	for _, opt := range opts {
+		opt(p)
+	}
+	return p
 }
 
 // NewBufferedBeepPlayer creates a new buffered streaming audio player with fallback
@@ -126,7 +179,7 @@ func NewAdvancedBufferedPlayer() Player {
 func (p *BeepPlayer) Play(ctx context.Context, streamURL string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	
+
 	// Validate input
 	if streamURL == "" {
 		return fmt.Errorf("stream URL cannot be empty")
@@ -152,7 +205,7 @@ func (p *BeepPlayer) Play(ctx context.Context, streamURL string) error {
 
 	// Initialize speaker if needed
 	p.speakerInit.Do(func() {
-		p.speakerInitErr = speaker.Init(format.SampleRate, format.SampleRate.N(time.Second/10))
+		p.speakerInitErr = p.sink.Init(format.SampleRate, format.SampleRate.N(time.Second/10))
 	})
 	if p.speakerInitErr != nil {
 		streamer.Close()
@@ -180,7 +233,7 @@ func (p *BeepPlayer) Play(ctx context.Context, streamURL string) error {
 
 	// Start playback
 	done := make(chan bool)
-	speaker.Play(beep.Seq(p.ctrl, beep.Callback(func() {
+	p.sink.Play(beep.Seq(p.ctrl, beep.Callback(func() {
 		p.mu.Lock()
 		p.state = StateStopped
 		p.mu.Unlock()
@@ -188,7 +241,7 @@ func (p *BeepPlayer) Play(ctx context.Context, streamURL string) error {
 	})))
 
 	p.state = StatePlaying
-	
+
 	// Start position tracking
 	go p.trackPosition(done)
 
@@ -199,15 +252,15 @@ func (p *BeepPlayer) Play(ctx context.Context, streamURL string) error {
 func (p *BeepPlayer) Pause() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	
+
 	if p.state != StatePlaying {
 		return fmt.Errorf("cannot pause: player is %s", p.state)
 	}
 
 	if p.ctrl != nil {
-		speaker.Lock()
+		p.sink.Lock()
 		p.ctrl.Paused = true
-		speaker.Unlock()
+		p.sink.Unlock()
 	}
 
 	p.state = StatePaused
@@ -218,15 +271,15 @@ func (p *BeepPlayer) Pause() error {
 func (p *BeepPlayer) Resume() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	
+
 	if p.state != StatePaused {
 		return fmt.Errorf("cannot resume: player is %s", p.state)
 	}
 
 	if p.ctrl != nil {
-		speaker.Lock()
+		p.sink.Lock()
 		p.ctrl.Paused = false
-		speaker.Unlock()
+		p.sink.Unlock()
 	}
 
 	p.state = StatePlaying
@@ -251,15 +304,15 @@ func (p *BeepPlayer) GetState() PlayerState {
 func (p *BeepPlayer) GetPosition() time.Duration {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	
+
 	if p.streamer == nil || p.format.SampleRate == 0 {
 		return 0
 	}
-	
-	speaker.Lock()
+
+	p.sink.Lock()
 	position := p.streamer.Position()
-	speaker.Unlock()
-	
+	p.sink.Unlock()
+
 	return p.format.SampleRate.D(position)
 }
 
@@ -267,11 +320,11 @@ func (p *BeepPlayer) GetPosition() time.Duration {
 func (p *BeepPlayer) GetDuration() time.Duration {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	
+
 	if p.streamer == nil || p.format.SampleRate == 0 {
 		return 0
 	}
-	
+
 	return p.format.SampleRate.D(p.streamer.Len())
 }
 
@@ -283,16 +336,16 @@ func (p *BeepPlayer) SetVolume(volume float64) error {
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	
+
 	p.volume = volume
-	
+
 	if p.volumeCtrl != nil {
-		speaker.Lock()
+		p.sink.Lock()
 		p.volumeCtrl.Volume = p.volumeToBeepVolume(volume)
 		p.volumeCtrl.Silent = volume == 0
-		speaker.Unlock()
+		p.sink.Unlock()
 	}
-	
+
 	return nil
 }
 
@@ -307,7 +360,7 @@ func (p *BeepPlayer) GetVolume() float64 {
 func (p *BeepPlayer) Seek(position time.Duration) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	
+
 	if position < 0 {
 		return fmt.Errorf("position cannot be negative")
 	}
@@ -315,19 +368,19 @@ func (p *BeepPlayer) Seek(position time.Duration) error {
 	if p.streamer == nil {
 		return fmt.Errorf("no audio stream loaded")
 	}
-	
-	duration := p.GetDuration()
+
+	duration := p.getDurationLocked()
 	if position > duration {
 		return fmt.Errorf("position %s exceeds duration %s", position, duration)
 	}
 
 	// Convert time position to sample position
 	samplePos := p.format.SampleRate.N(position)
-	
-	speaker.Lock()
+
+	p.sink.Lock()
 	err := p.streamer.Seek(samplePos)
-	speaker.Unlock()
-	
+	p.sink.Unlock()
+
 	return err
 }
 
@@ -335,15 +388,15 @@ func (p *BeepPlayer) Seek(position time.Duration) error {
 func (p *BeepPlayer) Close() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	
+
 	if err := p.stopLocked(); err != nil {
 		return err
 	}
-	
+
 	if p.httpClient != nil {
 		p.httpClient.CloseIdleConnections()
 	}
-	
+
 	return nil
 }
 
@@ -352,31 +405,39 @@ func (p *BeepPlayer) Close() error {
 // stopLocked stops playback without acquiring lock (caller must hold lock)
 func (p *BeepPlayer) stopLocked() error {
 	if p.ctrl != nil {
-		speaker.Lock()
+		p.sink.Lock()
 		p.ctrl.Paused = true
-		speaker.Unlock()
+		p.sink.Unlock()
 	}
-	
+
 	if p.streamer != nil {
 		if err := p.streamer.Close(); err != nil {
 			return fmt.Errorf("failed to close streamer: %w", err)
 		}
 		p.streamer = nil
 	}
-	
+
 	p.ctrl = nil
 	p.volumeCtrl = nil
 	p.streamURL = ""
 	p.state = StateStopped
-	
+
 	return nil
+}
+
+// getDurationLocked returns track duration; caller must already hold p.mu.
+func (p *BeepPlayer) getDurationLocked() time.Duration {
+	if p.streamer == nil || p.format.SampleRate == 0 {
+		return 0
+	}
+	return p.format.SampleRate.D(p.streamer.Len())
 }
 
 // loadAudioStreamWithRetry downloads and decodes an audio stream with retry logic
 func (p *BeepPlayer) loadAudioStreamWithRetry(ctx context.Context, streamURL string) (beep.StreamSeekCloser, beep.Format, error) {
 	maxRetries := 3
 	backoffDuration := 2 * time.Second
-	
+
 	var lastErr error
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		if attempt > 0 {
@@ -387,63 +448,63 @@ func (p *BeepPlayer) loadAudioStreamWithRetry(ctx context.Context, streamURL str
 				// Continue with retry
 			}
 		}
-		
+
 		streamer, format, err := p.loadAudioStream(ctx, streamURL)
 		if err == nil {
 			return streamer, format, nil
 		}
-		
+
 		lastErr = err
-		
+
 		// Don't retry on context cancellation or certain errors
 		if ctx.Err() != nil {
 			return nil, beep.Format{}, err
 		}
 	}
-	
+
 	return nil, beep.Format{}, fmt.Errorf("failed to load audio stream after %d attempts: %w", maxRetries, lastErr)
 }
 
 // loadAudioStream downloads and decodes an audio stream from URL
 func (p *BeepPlayer) loadAudioStream(ctx context.Context, streamURL string) (beep.StreamSeekCloser, beep.Format, error) {
-	// Create HTTP request  
+	// Create HTTP request
 	req, err := http.NewRequestWithContext(ctx, "GET", streamURL, nil)
 	if err != nil {
 		return nil, beep.Format{}, fmt.Errorf("failed to create request: %w", err)
 	}
-	
+
 	// Download stream
 	resp, err := p.httpClient.Do(req)
 	if err != nil {
 		return nil, beep.Format{}, fmt.Errorf("failed to download stream: %w", err)
 	}
-	
+
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
 		return nil, beep.Format{}, fmt.Errorf("HTTP error: %d %s", resp.StatusCode, resp.Status)
 	}
-	
+
 	// Detect format and decode
 	contentType := resp.Header.Get("Content-Type")
-	streamURL = strings.ToLower(streamURL)
-	
+	lowerURL := strings.ToLower(streamURL)
+
 	var streamer beep.StreamSeekCloser
 	var format beep.Format
-	
-	if strings.Contains(contentType, "audio/mpeg") || strings.Contains(streamURL, ".mp3") {
-		streamer, format, err = mp3.Decode(resp.Body)
-	} else if strings.Contains(contentType, "audio/wav") || strings.Contains(streamURL, ".wav") {
+
+	if strings.Contains(contentType, "audio/wav") || strings.Contains(lowerURL, ".wav") {
 		streamer, format, err = wav.Decode(resp.Body)
+	} else if strings.Contains(contentType, "audio/mpeg") || strings.Contains(lowerURL, ".mp3") {
+		streamer, format, err = mp3.Decode(resp.Body)
 	} else {
 		// Default to MP3 for unknown formats
 		streamer, format, err = mp3.Decode(resp.Body)
 	}
-	
+
 	if err != nil {
 		resp.Body.Close()
 		return nil, beep.Format{}, fmt.Errorf("failed to decode audio: %w", err)
 	}
-	
+
 	return streamer, format, nil
 }
 
@@ -455,7 +516,7 @@ func (p *BeepPlayer) volumeToBeepVolume(linearVolume float64) float64 {
 	if linearVolume >= 1 {
 		return 0 // Unity gain
 	}
-	
+
 	// Convert linear to dB: 20 * log10(volume)
 	// Beep uses base-2 logarithmic scale, so we adjust
 	return (linearVolume - 1.0) * 2.0 // Simple approximation
@@ -465,7 +526,7 @@ func (p *BeepPlayer) volumeToBeepVolume(linearVolume float64) float64 {
 func (p *BeepPlayer) trackPosition(done <-chan bool) {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
-	
+
 	for {
 		select {
 		case <-done:
@@ -476,5 +537,3 @@ func (p *BeepPlayer) trackPosition(done <-chan bool) {
 		}
 	}
 }
-
-

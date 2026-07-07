@@ -54,9 +54,6 @@ func (m *MockAudioPlayer) SetVolume(volume float64) error {
 }
 
 func (m *MockAudioPlayer) GetVolume() float64 {
-	if m.volume == 0 {
-		return 1.0 // Default volume
-	}
 	return m.volume
 }
 
@@ -124,4 +121,8 @@ func (m *MockSoundCloudClient) GetTrackInfo(url string) (*soundcloud.Track, erro
 		Title: "Test Track",
 		User:  soundcloud.User{Username: "Test Artist"},
 	}, nil
+}
+
+func (m *MockSoundCloudClient) GetDownloadURL(trackURL string, format string) (string, error) {
+	return "https://example.com/download.mp3", nil
 }

@@ -13,7 +13,7 @@ func (m *MockSoundCloudAPI) GetTrackInfo(options soundcloudapi.GetTrackInfoOptio
 	if m.GetTrackInfoFunc != nil {
 		return m.GetTrackInfoFunc(options)
 	}
-	
+
 	// Default mock behavior - return a valid track
 	return []soundcloudapi.Track{
 		{

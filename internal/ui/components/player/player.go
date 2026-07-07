@@ -78,17 +78,17 @@ type PlayerComponent struct {
 	// Size
 	width  int
 	height int
-	
+
 	// State
-	state           State
-	currentTrack    *soundcloud.Track
-	position        time.Duration
-	duration        time.Duration
-	expectedDuration time.Duration // Duration from SoundCloud metadata
-	volume          float64
-	error           error
-	prematureStopDetected bool    // Flag to track if we've already detected a premature stop
-	
+	state                 State
+	currentTrack          *soundcloud.Track
+	position              time.Duration
+	duration              time.Duration
+	expectedDuration      time.Duration // Duration from SoundCloud metadata
+	volume                float64
+	error                 error
+	prematureStopDetected bool // Flag to track if we've already detected a premature stop
+
 	// Dependencies
 	audioPlayer     audio.Player
 	streamExtractor audio.StreamExtractor
@@ -120,17 +120,17 @@ func (p *PlayerComponent) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		return p.handleKeyMsg(msg)
-		
+
 	case PlayTrackMsg:
 		return p.handlePlayTrack(msg)
-		
+
 	case StreamInfoMsg:
 		return p.handleStreamInfo(msg)
-		
+
 	case ProgressUpdateMsg:
 		p.position = msg.Position
 		p.duration = msg.Duration
-		
+
 		// If we were loading and got progress, transition to playing
 		if p.state == StateLoading {
 			p.state = StatePlaying
@@ -144,13 +144,13 @@ func (p *PlayerComponent) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				},
 			)
 		}
-		
+
 		// Sync state with audio player if available
 		if p.audioPlayer != nil {
 			p.syncStateWithAudioPlayer()
 		}
 		return p, p.tickProgress()
-		
+
 	case LoadingTimeoutMsg:
 		// Handle loading timeout
 		if p.state == StateLoading {
@@ -158,7 +158,7 @@ func (p *PlayerComponent) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			p.error = fmt.Errorf("loading timeout - unable to start playback")
 		}
 		return p, nil
-		
+
 	case PlaybackErrorMsg:
 		// Handle playback errors
 		p.state = StateError
@@ -169,20 +169,20 @@ func (p *PlayerComponent) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				Error: msg.Error,
 			}
 		}
-		
+
 	case tea.WindowSizeMsg:
 		p.width = msg.Width
 		p.height = msg.Height
 		return p, nil
-		
+
 	case error:
 		// Handle error messages from commands
 		return p.handleError(msg)
-		
+
 	default:
 		// No special handling needed - let ProgressUpdateMsg handle updates
 	}
-	
+
 	return p, nil
 }
 
@@ -191,17 +191,17 @@ func (p *PlayerComponent) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if p.audioPlayer == nil {
 		return p, nil
 	}
-	
+
 	switch msg.Type {
 	case tea.KeySpace:
 		return p.togglePlayPause()
-		
+
 	case tea.KeyLeft:
 		return p.seekBackward()
-		
+
 	case tea.KeyRight:
 		return p.seekForward()
-		
+
 	case tea.KeyRunes:
 		switch string(msg.Runes) {
 		case "+", "=":
@@ -210,7 +210,7 @@ func (p *PlayerComponent) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return p.decreaseVolume()
 		}
 	}
-	
+
 	return p, nil
 }
 
@@ -223,13 +223,13 @@ func (p *PlayerComponent) handlePlayTrack(msg PlayTrackMsg) (tea.Model, tea.Cmd)
 	p.state = StateLoading
 	p.error = nil
 	p.prematureStopDetected = false // Reset flag for new track
-	
+
 	if p.streamExtractor == nil {
 		p.state = StateError
 		p.error = fmt.Errorf("no stream extractor available")
 		return p, nil
 	}
-	
+
 	// Start loading with timeout
 	return p, tea.Batch(
 		p.extractStreamURL(msg.Track.ID),
@@ -250,12 +250,12 @@ func (p *PlayerComponent) handleStreamInfo(msg StreamInfoMsg) (tea.Model, tea.Cm
 			}
 		}
 	}
-	
+
 	// Store expected duration from SoundCloud metadata
 	if msg.StreamInfo != nil && msg.StreamInfo.Duration > 0 {
 		p.expectedDuration = time.Duration(msg.StreamInfo.Duration) * time.Millisecond
 	}
-	
+
 	// Stay in loading state until playback actually starts
 	return p, p.playStream(msg.StreamInfo.URL)
 }
@@ -265,7 +265,7 @@ func (p *PlayerComponent) togglePlayPause() (tea.Model, tea.Cmd) {
 	if p.audioPlayer == nil {
 		return p, nil
 	}
-	
+
 	switch p.audioPlayer.GetState() {
 	case audio.StatePlaying:
 		return p, func() tea.Msg {
@@ -279,7 +279,10 @@ func (p *PlayerComponent) togglePlayPause() (tea.Model, tea.Cmd) {
 			}
 		}
 	case audio.StatePaused:
-		// Resume playback without restarting the stream
+		// Resume playback without restarting the stream. Reflect the resume in
+		// the UI immediately for responsive feedback; an error from Resume()
+		// below transitions to the error state.
+		p.state = StatePlaying
 		return p, func() tea.Msg {
 			err := p.audioPlayer.Resume()
 			if err != nil {
@@ -326,12 +329,12 @@ func (p *PlayerComponent) seekBackward() (tea.Model, tea.Cmd) {
 	if p.audioPlayer == nil {
 		return p, nil
 	}
-	
+
 	newPos := p.position - 10*time.Second
 	if newPos < 0 {
 		newPos = 0
 	}
-	
+
 	return p, func() tea.Msg {
 		err := p.audioPlayer.Seek(newPos)
 		if err != nil {
@@ -349,12 +352,12 @@ func (p *PlayerComponent) seekForward() (tea.Model, tea.Cmd) {
 	if p.audioPlayer == nil {
 		return p, nil
 	}
-	
+
 	newPos := p.position + 10*time.Second
 	if newPos > p.duration {
 		newPos = p.duration
 	}
-	
+
 	return p, func() tea.Msg {
 		err := p.audioPlayer.Seek(newPos)
 		if err != nil {
@@ -377,12 +380,12 @@ func (p *PlayerComponent) increaseVolume() (tea.Model, tea.Cmd) {
 		}
 		return p, nil
 	}
-	
+
 	newVolume := p.volume + 0.1
 	if newVolume > 1.0 {
 		newVolume = 1.0
 	}
-	
+
 	return p, func() tea.Msg {
 		err := p.audioPlayer.SetVolume(newVolume)
 		if err != nil {
@@ -407,12 +410,12 @@ func (p *PlayerComponent) decreaseVolume() (tea.Model, tea.Cmd) {
 		}
 		return p, nil
 	}
-	
+
 	newVolume := p.volume - 0.1
 	if newVolume < 0.0 {
 		newVolume = 0.0
 	}
-	
+
 	return p, func() tea.Msg {
 		err := p.audioPlayer.SetVolume(newVolume)
 		if err != nil {
@@ -433,7 +436,7 @@ func (p *PlayerComponent) extractStreamURL(trackID int64) tea.Cmd {
 		// Use shorter timeout to prevent indefinite loading
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		
+
 		streamInfo, err := p.streamExtractor.ExtractStreamURL(ctx, trackID)
 		return StreamInfoMsg{
 			StreamInfo: streamInfo,
@@ -453,14 +456,14 @@ func (p *PlayerComponent) playStream(streamURL string) tea.Cmd {
 		// Use shorter timeout to prevent hanging the TUI
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		
+
 		err := p.audioPlayer.Play(ctx, streamURL)
 		if err != nil {
 			return PlaybackErrorMsg{
 				Error: fmt.Errorf("failed to play stream: %w", err),
 			}
 		}
-		
+
 		return ProgressUpdateMsg{
 			Position: p.audioPlayer.GetPosition(),
 			Duration: p.audioPlayer.GetDuration(),
@@ -569,8 +572,8 @@ func (p *PlayerComponent) renderIdleView() string {
 		"",
 		styles.HelpStyle.Render("Select a track from the search to start playing"),
 	)
-	
-	return styles.PlayerStyle.Width(p.width-4).Height(p.height-4).Render(
+
+	return styles.PlayerStyle.Width(p.width - 4).Height(p.height - 4).Render(
 		lipgloss.Place(p.width-8, p.height-8, lipgloss.Center, lipgloss.Center, content),
 	)
 }
@@ -580,7 +583,7 @@ func (p *PlayerComponent) renderLoadingView() string {
 	if p.currentTrack == nil {
 		return p.renderIdleView()
 	}
-	
+
 	content := lipgloss.JoinVertical(
 		lipgloss.Center,
 		styles.TrackTitleStyle.Render(p.currentTrack.Title),
@@ -588,8 +591,8 @@ func (p *PlayerComponent) renderLoadingView() string {
 		"",
 		styles.LoadingStatusStyle.Render("🔄 Loading..."),
 	)
-	
-	return styles.PlayerStyle.Width(p.width-4).Height(p.height-4).Render(
+
+	return styles.PlayerStyle.Width(p.width - 4).Height(p.height - 4).Render(
 		lipgloss.Place(p.width-8, p.height-8, lipgloss.Center, lipgloss.Center, content),
 	)
 }
@@ -599,14 +602,14 @@ func (p *PlayerComponent) renderPlayingView() string {
 	if p.currentTrack == nil {
 		return p.renderIdleView()
 	}
-	
+
 	// Track info with enhanced metadata display
 	metadata := styles.RenderMetadataPanel(
 		p.currentTrack.Title,
 		p.currentTrack.Artist(),
 		p.width-8, // Account for player panel padding
 	)
-	
+
 	// Status
 	var status string
 	if p.audioPlayer != nil {
@@ -621,21 +624,22 @@ func (p *PlayerComponent) renderPlayingView() string {
 	} else {
 		status = styles.StatusStyle.Render("⏹ Stopped")
 	}
-	
+
 	// Progress bar
 	var progressBar string
 	var timeInfo string
-	
-	// Use actual duration from audio player, fallback to expected duration from metadata
+
+	// Progress reflects the component's cached position/duration, which the
+	// Bubble Tea update loop keeps in sync via ProgressUpdateMsg.
 	displayDuration := p.duration
 	if displayDuration <= 0 && p.expectedDuration > 0 {
 		displayDuration = p.expectedDuration
 	}
-	
+
 	if displayDuration > 0 {
 		progress := float64(p.position) / float64(displayDuration)
 		progressBar = styles.RenderProgressBar(p.width-12, progress)
-		
+
 		posStr := styles.FormatDurationFromTime(p.position)
 		durStr := styles.FormatDurationFromTime(displayDuration)
 		timeInfo = fmt.Sprintf("%s / %s", posStr, durStr)
@@ -643,23 +647,27 @@ func (p *PlayerComponent) renderPlayingView() string {
 		progressBar = styles.RenderProgressBar(p.width-12, 0)
 		timeInfo = styles.FormatDurationFromTime(0) + " / " + styles.FormatDurationFromTime(0)
 	}
-	
-	// Volume info with appropriate icon
-	volumePercent := int(p.volume * 100)
+
+	// Volume reflects the live player volume when available.
+	displayVolume := p.volume
+	if p.audioPlayer != nil {
+		displayVolume = p.audioPlayer.GetVolume()
+	}
+	volumePercent := int(displayVolume * 100)
 	var volumeIcon string
 	switch {
-	case p.volume == 0:
+	case displayVolume == 0:
 		volumeIcon = "🔇" // Muted
-	case p.volume < 0.5:
+	case displayVolume < 0.5:
 		volumeIcon = "🔉" // Low volume
 	default:
 		volumeIcon = "🔊" // High volume
 	}
 	volumeInfo := fmt.Sprintf("%s %d%%", volumeIcon, volumePercent)
-	
+
 	// Controls help
 	controls := styles.HelpStyle.Render("Space: Play/Pause • ←→: Seek • +/-: Volume")
-	
+
 	// Combine everything
 	content := lipgloss.JoinVertical(
 		lipgloss.Left,
@@ -674,8 +682,8 @@ func (p *PlayerComponent) renderPlayingView() string {
 		"",
 		controls,
 	)
-	
-	return styles.PlayerStyle.Width(p.width-4).Render(content)
+
+	return styles.PlayerStyle.Width(p.width - 4).Render(content)
 }
 
 // renderCompletedView renders the completed view
@@ -683,37 +691,37 @@ func (p *PlayerComponent) renderCompletedView() string {
 	if p.currentTrack == nil {
 		return p.renderIdleView()
 	}
-	
+
 	// Track info with enhanced metadata display
 	metadata := styles.RenderMetadataPanel(
 		p.currentTrack.Title,
 		p.currentTrack.Artist(),
 		p.width-8, // Account for player panel padding
 	)
-	
+
 	// Status
 	status := styles.StatusStyle.Render("✅ Track Completed")
-	
+
 	// Progress bar (show as full)
 	var progressBar string
 	var timeInfo string
-	
+
 	// Use actual duration from audio player, fallback to expected duration from metadata
 	displayDuration := p.duration
 	if displayDuration <= 0 && p.expectedDuration > 0 {
 		displayDuration = p.expectedDuration
 	}
-	
+
 	if displayDuration > 0 {
 		progressBar = styles.RenderProgressBar(p.width-12, 1.0) // 100% complete
-		
+
 		durStr := styles.FormatDurationFromTime(displayDuration)
 		timeInfo = fmt.Sprintf("%s / %s", durStr, durStr)
 	} else {
 		progressBar = styles.RenderProgressBar(p.width-12, 1.0)
 		timeInfo = "Completed"
 	}
-	
+
 	// Volume info
 	volumePercent := int(p.volume * 100)
 	var volumeIcon string
@@ -726,10 +734,10 @@ func (p *PlayerComponent) renderCompletedView() string {
 		volumeIcon = "🔊" // High volume
 	}
 	volumeInfo := fmt.Sprintf("%s %d%%", volumeIcon, volumePercent)
-	
+
 	// Controls help
 	controls := styles.HelpStyle.Render("Space: Replay • Search for another track")
-	
+
 	// Combine everything
 	content := lipgloss.JoinVertical(
 		lipgloss.Left,
@@ -744,8 +752,8 @@ func (p *PlayerComponent) renderCompletedView() string {
 		"",
 		controls,
 	)
-	
-	return styles.PlayerStyle.Width(p.width-4).Render(content)
+
+	return styles.PlayerStyle.Width(p.width - 4).Render(content)
 }
 
 // renderErrorView renders the error view
@@ -756,19 +764,24 @@ func (p *PlayerComponent) renderErrorView() string {
 	} else {
 		trackInfo = "Unknown track"
 	}
-	
+
+	errMsg := "Unknown error"
+	if p.error != nil {
+		errMsg = p.error.Error()
+	}
+
 	content := lipgloss.JoinVertical(
 		lipgloss.Center,
 		styles.ErrorStatusStyle.Render("❌ Playback Error"),
 		"",
 		styles.StatusStyle.Render(trackInfo),
 		"",
-		styles.ErrorStatusStyle.Render(p.error.Error()),
+		styles.ErrorStatusStyle.Render(errMsg),
 		"",
 		styles.HelpStyle.Render("Try selecting another track"),
 	)
-	
-	return styles.PlayerStyle.Width(p.width-4).Height(p.height-4).Render(
+
+	return styles.PlayerStyle.Width(p.width - 4).Height(p.height - 4).Render(
 		lipgloss.Place(p.width-8, p.height-8, lipgloss.Center, lipgloss.Center, content),
 	)
 }

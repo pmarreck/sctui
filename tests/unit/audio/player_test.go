@@ -7,13 +7,23 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	
+
 	"soundcloud-tui/internal/audio"
 )
 
+// newTestPlayer builds a BeepPlayer wired to a headless audio sink and an HTTP
+// client that serves a valid in-memory WAV, so playback can be exercised
+// deterministically without a sound card or network.
+func newTestPlayer() *audio.BeepPlayer {
+	return audio.NewBeepPlayer(
+		audio.WithAudioSink(fakeSink{}),
+		audio.WithHTTPClient(newWAVResponder(testWAV)),
+	)
+}
+
 func TestBeepPlayer_NewPlayer(t *testing.T) {
 	player := audio.NewBeepPlayer()
-	
+
 	require.NotNil(t, player)
 	assert.Equal(t, audio.StateStopped, player.GetState())
 	assert.Equal(t, float64(1.0), player.GetVolume()) // Default volume
@@ -41,17 +51,17 @@ func TestBeepPlayer_Play(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			player := audio.NewBeepPlayer()
+			player := newTestPlayer()
 			ctx := context.Background()
-			
+
 			err := player.Play(ctx, tt.streamURL)
-			
+
 			if tt.wantErr {
 				assert.Error(t, err)
 				assert.Equal(t, audio.StateStopped, player.GetState())
 				return
 			}
-			
+
 			require.NoError(t, err)
 			assert.Equal(t, audio.StatePlaying, player.GetState())
 			assert.Greater(t, player.GetDuration(), time.Duration(0))
@@ -60,12 +70,12 @@ func TestBeepPlayer_Play(t *testing.T) {
 }
 
 func TestBeepPlayer_PlayWithContextCancellation(t *testing.T) {
-	player := audio.NewBeepPlayer()
-	
+	player := newTestPlayer()
+
 	// Create cancelled context
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	
+
 	err := player.Play(ctx, "https://example.com/test.mp3")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "context canceled")
@@ -73,24 +83,24 @@ func TestBeepPlayer_PlayWithContextCancellation(t *testing.T) {
 }
 
 func TestBeepPlayer_Pause(t *testing.T) {
-	player := audio.NewBeepPlayer()
+	player := newTestPlayer()
 	ctx := context.Background()
-	
+
 	// Cannot pause when stopped
 	err := player.Pause()
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "cannot pause: player is stopped")
-	
+
 	// Start playing first
 	err = player.Play(ctx, "https://example.com/test.mp3")
 	require.NoError(t, err)
 	assert.Equal(t, audio.StatePlaying, player.GetState())
-	
+
 	// Now pause should work
 	err = player.Pause()
 	require.NoError(t, err)
 	assert.Equal(t, audio.StatePaused, player.GetState())
-	
+
 	// Cannot pause when already paused
 	err = player.Pause()
 	assert.Error(t, err)
@@ -98,18 +108,18 @@ func TestBeepPlayer_Pause(t *testing.T) {
 }
 
 func TestBeepPlayer_Stop(t *testing.T) {
-	player := audio.NewBeepPlayer()
+	player := newTestPlayer()
 	ctx := context.Background()
-	
+
 	// Start playing
 	err := player.Play(ctx, "https://example.com/test.mp3")
 	require.NoError(t, err)
-	
-	// Simulate some playback position
+
+	// Simulate some playback position (well within the 60s test track)
 	err = player.Seek(30 * time.Second)
 	require.NoError(t, err)
 	assert.Equal(t, 30*time.Second, player.GetPosition())
-	
+
 	// Stop should reset position
 	err = player.Stop()
 	require.NoError(t, err)
@@ -119,7 +129,7 @@ func TestBeepPlayer_Stop(t *testing.T) {
 
 func TestBeepPlayer_Volume(t *testing.T) {
 	player := audio.NewBeepPlayer()
-	
+
 	// Test valid volume values
 	testVolumes := []float64{0.0, 0.5, 1.0}
 	for _, volume := range testVolumes {
@@ -127,7 +137,7 @@ func TestBeepPlayer_Volume(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, volume, player.GetVolume())
 	}
-	
+
 	// Test invalid volume values
 	invalidVolumes := []float64{-0.1, 1.1, 2.0}
 	for _, volume := range invalidVolumes {
@@ -138,66 +148,66 @@ func TestBeepPlayer_Volume(t *testing.T) {
 }
 
 func TestBeepPlayer_Seek(t *testing.T) {
-	player := audio.NewBeepPlayer()
+	player := newTestPlayer()
 	ctx := context.Background()
-	
+
 	// Start playing to set duration
 	err := player.Play(ctx, "https://example.com/test.mp3")
 	require.NoError(t, err)
-	
+
 	duration := player.GetDuration()
 	require.Greater(t, duration, time.Duration(0))
-	
+
 	// Test valid seek positions
 	validPositions := []time.Duration{
 		0,
 		duration / 2,
 		duration,
 	}
-	
+
 	for _, position := range validPositions {
 		err := player.Seek(position)
 		require.NoError(t, err)
 		assert.Equal(t, position, player.GetPosition())
 	}
-	
+
 	// Test invalid seek positions
 	err = player.Seek(-1 * time.Second)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "position cannot be negative")
-	
+
 	err = player.Seek(duration + time.Second)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "exceeds duration")
 }
 
 func TestBeepPlayer_StateTransitions(t *testing.T) {
-	player := audio.NewBeepPlayer()
+	player := newTestPlayer()
 	ctx := context.Background()
-	
+
 	// Initial state
 	assert.Equal(t, audio.StateStopped, player.GetState())
-	
+
 	// Stopped -> Playing
 	err := player.Play(ctx, "https://example.com/test.mp3")
 	require.NoError(t, err)
 	assert.Equal(t, audio.StatePlaying, player.GetState())
-	
+
 	// Playing -> Paused
 	err = player.Pause()
 	require.NoError(t, err)
 	assert.Equal(t, audio.StatePaused, player.GetState())
-	
+
 	// Paused -> Playing (resume)
 	err = player.Play(ctx, "https://example.com/test.mp3")
 	require.NoError(t, err)
 	assert.Equal(t, audio.StatePlaying, player.GetState())
-	
+
 	// Playing -> Stopped
 	err = player.Stop()
 	require.NoError(t, err)
 	assert.Equal(t, audio.StateStopped, player.GetState())
-	
+
 	// Paused -> Stopped
 	err = player.Play(ctx, "https://example.com/test.mp3")
 	require.NoError(t, err)
@@ -209,14 +219,14 @@ func TestBeepPlayer_StateTransitions(t *testing.T) {
 }
 
 func TestBeepPlayer_Close(t *testing.T) {
-	player := audio.NewBeepPlayer()
+	player := newTestPlayer()
 	ctx := context.Background()
-	
+
 	// Start playing
 	err := player.Play(ctx, "https://example.com/test.mp3")
 	require.NoError(t, err)
 	assert.Equal(t, audio.StatePlaying, player.GetState())
-	
+
 	// Close should stop playback
 	err = player.Close()
 	require.NoError(t, err)
@@ -234,7 +244,7 @@ func TestPlayerState_String(t *testing.T) {
 		{audio.StatePaused, "paused"},
 		{audio.PlayerState(999), "unknown"}, // Invalid state
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.expected, func(t *testing.T) {
 			assert.Equal(t, tt.expected, tt.state.String())
@@ -245,10 +255,10 @@ func TestPlayerState_String(t *testing.T) {
 func TestBeepPlayer_InterfaceCompliance(t *testing.T) {
 	// Ensure BeepPlayer implements Player interface
 	var _ audio.Player = (*audio.BeepPlayer)(nil)
-	
+
 	// Test that we can use it as Player interface
 	var player audio.Player = audio.NewBeepPlayer()
-	
+
 	assert.Equal(t, audio.StateStopped, player.GetState())
 	assert.Equal(t, float64(1.0), player.GetVolume())
 }

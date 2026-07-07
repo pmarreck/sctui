@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Build sctui via nix (sandboxed, reproducible) and stage the binary in ./bin.
+# Extra args are passed through to `nix build` (e.g. --rebuild).
+set -u
+cd "$(dirname "$0")" || exit 1
+
+echo "Building sctui via nix..." >&2
+nix build . --print-build-logs "$@" || exit $?
+
+mkdir -p bin
+cp -fL result/bin/sctui bin/sctui
+echo "Built: bin/sctui" >&2

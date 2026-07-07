@@ -2,6 +2,7 @@ package ui_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 
@@ -12,10 +13,10 @@ import (
 
 func TestMetadataDisplay_TrackInformation(t *testing.T) {
 	tests := []struct {
-		name         string
-		track        *soundcloud.Track
-		expectedTitle string
-		expectedArtist string
+		name             string
+		track            *soundcloud.Track
+		expectedTitle    string
+		expectedArtist   string
 		expectedDuration string
 	}{
 		{
@@ -175,7 +176,7 @@ func TestMetadataDisplay_NoTrackLoaded(t *testing.T) {
 	}
 
 	playerComponent := player.NewPlayerComponent(mockPlayer, nil)
-	
+
 	// No track set - idle state
 	assert.Equal(t, player.StateIdle, playerComponent.GetState())
 
@@ -195,8 +196,8 @@ func TestMetadataDisplay_NoTrackLoaded(t *testing.T) {
 func TestMetadataDisplay_TrackProgress(t *testing.T) {
 	mockPlayer := &MockAudioPlayer{
 		state:    audio.StatePlaying,
-		position: 90000, // 1:30
-		duration: 180000, // 3:00
+		position: 90 * time.Second,  // 1:30
+		duration: 180 * time.Second, // 3:00
 		volume:   0.75,
 	}
 
@@ -213,8 +214,8 @@ func TestMetadataDisplay_TrackProgress(t *testing.T) {
 
 	// Update with progress
 	progressMsg := player.ProgressUpdateMsg{
-		Position: 90000, // 1:30
-		Duration: 180000, // 3:00
+		Position: 90 * time.Second,  // 1:30
+		Duration: 180 * time.Second, // 3:00
 	}
 
 	updatedComponent, _ := playerComponent.Update(progressMsg)
@@ -240,12 +241,12 @@ func TestMetadataDisplay_MetadataLayout(t *testing.T) {
 	playerComponent := player.NewPlayerComponent(mockPlayer, nil)
 
 	track := &soundcloud.Track{
-		ID:          123456789,
-		Title:       "Layout Test Track",
-		Description: "This is a test track for testing the metadata layout and display",
-		User:        soundcloud.User{Username: "LayoutArtist", FirstName: "Layout", LastName: "Artist"},
-		Duration:    210000, // 3:30
-		ArtworkURL:  "https://example.com/artwork.jpg",
+		ID:           123456789,
+		Title:        "Layout Test Track",
+		Description:  "This is a test track for testing the metadata layout and display",
+		User:         soundcloud.User{Username: "LayoutArtist", FirstName: "Layout", LastName: "Artist"},
+		Duration:     210000, // 3:30
+		ArtworkURL:   "https://example.com/artwork.jpg",
 		PermalinkURL: "https://soundcloud.com/layoutartist/layout-test-track",
 	}
 	playerComponent.SetCurrentTrack(track)
@@ -275,9 +276,9 @@ func TestMetadataDisplay_LongTitleTruncation(t *testing.T) {
 	playerComponent := player.NewPlayerComponent(mockPlayer, nil)
 
 	track := &soundcloud.Track{
-		ID:    123,
-		Title: "This Is An Extremely Long Track Title That Should Be Handled Gracefully By The Display System Without Breaking The Layout Or Causing Visual Issues In The Terminal User Interface",
-		User:  soundcloud.User{Username: "VeryLongArtistNameThatShouldAlsoBeHandledProperly"},
+		ID:       123,
+		Title:    "This Is An Extremely Long Track Title That Should Be Handled Gracefully By The Display System Without Breaking The Layout Or Causing Visual Issues In The Terminal User Interface",
+		User:     soundcloud.User{Username: "VeryLongArtistNameThatShouldAlsoBeHandledProperly"},
 		Duration: 240000,
 	}
 	playerComponent.SetCurrentTrack(track)
@@ -311,9 +312,9 @@ func TestMetadataDisplay_SpecialCharacters(t *testing.T) {
 	playerComponent := player.NewPlayerComponent(mockPlayer, nil)
 
 	track := &soundcloud.Track{
-		ID:    123,
-		Title: "Track with 🎵 Emojis & Special Characters: éñtertainment!",
-		User:  soundcloud.User{Username: "ArtistWithNumbers123", FirstName: "Émile", LastName: "François"},
+		ID:       123,
+		Title:    "Track with 🎵 Emojis & Special Characters: éñtertainment!",
+		User:     soundcloud.User{Username: "ArtistWithNumbers123", FirstName: "Émile", LastName: "François"},
 		Duration: 180000,
 	}
 	playerComponent.SetCurrentTrack(track)
