@@ -1,5 +1,35 @@
 # Implementation Plan for Open-Source SoundCloud TUI Client in Go
 
+## Current Work: Personal Playlist TUI Integration (2026-07-07 EDT)
+
+Goal: let a signed-in SoundCloud browser session browse personal/private playlists
+inside the interactive TUI and play selected tracks.
+
+Done criteria:
+- [x] `soundcloud.Client.PlaylistTracks(id)` returns fully hydrated tracks from a
+  playlist fixture, including shallow `/playlists/{id}` entries hydrated through
+  `/tracks?ids=...`. Completed 2026-07-07 19:09 EDT.
+- [ ] The interactive TUI header surfaces whether the app is signed in or browsing
+  anonymously.
+- [ ] The TUI has a playlist/library view: list playlists, drill into tracks, and
+  send selected tracks to the existing player.
+- [ ] The TUI has a favorites view for liked tracks and can play selected tracks.
+- [ ] `./test` and `./build` pass before each commit.
+
+Next small behaviors:
+- [x] API behavior: add fixture-tested `PlaylistTracks(id)`.
+  Curiosity poke: what breaks when the playlist payload mixes full tracks and
+  ID-only shallow tracks? Completed 2026-07-07 19:09 EDT.
+- [ ] TUI auth notice behavior: render signed-in source in the header.
+  Curiosity poke: how does the TUI behave if `Me()` fails after cookie discovery?
+- [ ] Library behavior: render playlists and drill into tracks without blocking
+  the Bubble Tea update loop.
+  Curiosity poke: what should a system playlist without a numeric playlist ID do?
+- [ ] Favorites behavior: fetch liked tracks through the logged-in api-v2 session
+  and render/play them in a dedicated tab.
+  Curiosity poke: does the library endpoint return liked tracks directly, or do
+  we need a separate paginated track-likes endpoint?
+
 ## Current Status (December 2024)
 
 ### ✅ COMPLETED PHASES

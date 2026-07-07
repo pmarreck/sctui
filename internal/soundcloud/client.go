@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 
 	soundcloudapi "github.com/zackradisic/soundcloud-api"
 
@@ -14,10 +16,11 @@ const apiV2 = "https://api-v2.soundcloud.com"
 
 // Client wraps the SoundCloud API client
 type Client struct {
-	api        *soundcloudapi.API
-	httpClient *http.Client
-	authed     bool
-	authSource string
+	api          *soundcloudapi.API
+	httpClient   *http.Client
+	authed       bool
+	authSource   string
+	apiV2BaseURL string
 }
 
 // authTransport injects the web-session OAuth token on every request so the
@@ -97,7 +100,7 @@ type ClientInterface interface {
 // browses anonymously. Callers can use IsAuthenticated/AuthSource for a notice.
 func NewClient() (*Client, error) {
 	httpClient := &http.Client{}
-	c := &Client{httpClient: httpClient}
+	c := &Client{httpClient: httpClient, apiV2BaseURL: apiV2}
 
 	if tok := session.Find(); tok != nil {
 		httpClient.Transport = &authTransport{token: tok.Value, base: http.DefaultTransport}
@@ -215,7 +218,11 @@ func (c *Client) GetTrackInfoWithOptions(options soundcloudapi.GetTrackInfoOptio
 // getV2 performs an authenticated GET against the SoundCloud v2 API and decodes
 // the JSON body into v.
 func (c *Client) getV2(path string, v any) error {
-	resp, err := c.httpClient.Get(apiV2 + path)
+	baseURL := c.apiV2BaseURL
+	if baseURL == "" {
+		baseURL = apiV2
+	}
+	resp, err := c.httpClient.Get(baseURL + path)
 	if err != nil {
 		return fmt.Errorf("request %s: %w", path, err)
 	}
@@ -325,4 +332,88 @@ func (c *Client) Library() ([]Playlist, error) {
 		}
 	}
 	return out, nil
+}
+
+type v2Track struct {
+	ID           int64  `json:"id"`
+	Title        string `json:"title"`
+	Description  string `json:"description"`
+	Duration     int64  `json:"duration"`
+	ArtworkURL   string `json:"artwork_url"`
+	StreamURL    string `json:"stream_url"`
+	PermalinkURL string `json:"permalink_url"`
+	User         User   `json:"user"`
+}
+
+func (t v2Track) toTrack() Track {
+	return Track{
+		ID:           t.ID,
+		Title:        t.Title,
+		Description:  t.Description,
+		Duration:     t.Duration,
+		ArtworkURL:   t.ArtworkURL,
+		StreamURL:    t.StreamURL,
+		PermalinkURL: t.PermalinkURL,
+		User:         t.User,
+	}
+}
+
+func (t v2Track) isShallow() bool {
+	return t.ID != 0 && t.Title == "" && t.Duration == 0 && t.PermalinkURL == ""
+}
+
+// PlaylistTracks returns tracks for a playlist, hydrating ID-only entries with
+// the api-v2 batch track endpoint while preserving the playlist's track order.
+func (c *Client) PlaylistTracks(playlistID int64) ([]Track, error) {
+	if !c.authed {
+		return nil, fmt.Errorf("not signed in (no browser session found)")
+	}
+
+	var playlist struct {
+		Tracks []v2Track `json:"tracks"`
+	}
+	if err := c.getV2(fmt.Sprintf("/playlists/%d", playlistID), &playlist); err != nil {
+		return nil, err
+	}
+
+	tracks := make([]Track, len(playlist.Tracks))
+	shallowPositions := map[int64][]int{}
+	var shallowIDs []int64
+	for i, raw := range playlist.Tracks {
+		tracks[i] = raw.toTrack()
+		if raw.isShallow() {
+			if _, ok := shallowPositions[raw.ID]; !ok {
+				shallowIDs = append(shallowIDs, raw.ID)
+			}
+			shallowPositions[raw.ID] = append(shallowPositions[raw.ID], i)
+		}
+	}
+	if len(shallowIDs) == 0 {
+		return tracks, nil
+	}
+
+	idParts := make([]string, len(shallowIDs))
+	for i, id := range shallowIDs {
+		idParts[i] = strconv.FormatInt(id, 10)
+	}
+	var hydrated []v2Track
+	if err := c.getV2("/tracks?ids="+strings.Join(idParts, ","), &hydrated); err != nil {
+		return nil, err
+	}
+
+	byID := make(map[int64]Track, len(hydrated))
+	for _, raw := range hydrated {
+		byID[raw.ID] = raw.toTrack()
+	}
+	for id, positions := range shallowPositions {
+		track, ok := byID[id]
+		if !ok {
+			continue
+		}
+		for _, pos := range positions {
+			tracks[pos] = track
+		}
+	}
+
+	return tracks, nil
 }

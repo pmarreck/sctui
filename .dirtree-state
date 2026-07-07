@@ -1,0 +1,5 @@
+# Dirtree: Stateful directory trees in the CLI for humans and LLMs. https://github.com/pmarreck/dirtree
+ver=1.2
+annotate=[
+	internal/soundcloud/client_test.go = fixture tests for playlist track hydration via api-v2
+]
