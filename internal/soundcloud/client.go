@@ -1,9 +1,12 @@
 package soundcloud
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -13,7 +16,7 @@ import (
 )
 
 const apiV2 = "https://api-v2.soundcloud.com"
-const trackHydrationBatchSize = 100
+const trackHydrationBatchSize = 50
 
 // Client wraps the SoundCloud API client
 type Client struct {
@@ -22,6 +25,7 @@ type Client struct {
 	authed       bool
 	authSource   string
 	apiV2BaseURL string
+	clientID     string
 }
 
 // authTransport injects the web-session OAuth token on every request so the
@@ -114,6 +118,7 @@ func NewClient() (*Client, error) {
 		return nil, fmt.Errorf("failed to create SoundCloud API client: %w", err)
 	}
 	c.api = api
+	c.clientID = api.ClientID()
 	return c, nil
 }
 
@@ -209,6 +214,74 @@ func (c *Client) GetDownloadURL(trackURL string, format string) (string, error) 
 	}
 
 	return downloadURL, nil
+}
+
+// GetTranscodingURL resolves an already-selected SoundCloud transcoding URL to
+// the signed CDN media URL, avoiding a second permalink resolve during playback.
+func (c *Client) GetTranscodingURL(ctx context.Context, transcodingURL string) (string, error) {
+	if strings.TrimSpace(transcodingURL) == "" {
+		return "", fmt.Errorf("transcoding URL cannot be empty")
+	}
+
+	u, err := url.Parse(transcodingURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid transcoding URL: %w", err)
+	}
+
+	q := u.Query()
+	if !q.Has("client_id") {
+		clientID := c.soundCloudClientID()
+		if clientID == "" {
+			return "", fmt.Errorf("SoundCloud client ID unavailable")
+		}
+		q.Set("client_id", clientID)
+		u.RawQuery = q.Encode()
+	}
+
+	httpClient := c.httpClient
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create transcoding media request: %w", err)
+	}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("transcoding media request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		if len(body) > 0 {
+			return "", fmt.Errorf("transcoding media request: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		}
+		return "", fmt.Errorf("transcoding media request: HTTP %d", resp.StatusCode)
+	}
+
+	var media struct {
+		URL string `json:"url"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&media); err != nil {
+		return "", fmt.Errorf("failed to decode transcoding media response: %w", err)
+	}
+	if media.URL == "" {
+		return "", fmt.Errorf("transcoding media response had no URL")
+	}
+	return media.URL, nil
+}
+
+func (c *Client) soundCloudClientID() string {
+	if c == nil {
+		return ""
+	}
+	if c.clientID != "" {
+		return c.clientID
+	}
+	if c.api != nil {
+		return c.api.ClientID()
+	}
+	return ""
 }
 
 // GetTrackInfoWithOptions gets track info using SoundCloud API options (for RealSoundCloudAPI compatibility)
@@ -376,7 +449,8 @@ func (c *Client) PlaylistTracks(playlistID int64) ([]Track, error) {
 	}
 
 	var playlist struct {
-		Tracks []v2Track `json:"tracks"`
+		Tracks      []v2Track `json:"tracks"`
+		SecretToken string    `json:"secret_token"`
 	}
 	if err := c.getV2(fmt.Sprintf("/playlists/%d", playlistID), &playlist); err != nil {
 		return nil, err
@@ -409,8 +483,14 @@ func (c *Client) PlaylistTracks(playlistID int64) ([]Track, error) {
 		for i, id := range shallowIDs[start:end] {
 			idParts[i] = strconv.FormatInt(id, 10)
 		}
+		path := "/tracks?ids=" + strings.Join(idParts, ",")
+		if playlist.SecretToken != "" {
+			path += "&playlistId=" + strconv.FormatInt(playlistID, 10)
+			path += "&playlistSecretToken=" + url.QueryEscape(playlist.SecretToken)
+		}
+
 		var hydrated []v2Track
-		if err := c.getV2("/tracks?ids="+strings.Join(idParts, ","), &hydrated); err != nil {
+		if err := c.getV2(path, &hydrated); err != nil {
 			return nil, err
 		}
 		for _, raw := range hydrated {

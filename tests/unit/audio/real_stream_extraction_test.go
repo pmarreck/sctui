@@ -45,6 +45,18 @@ func (m *MockRealSoundCloudAPI) GetTrackInfoWithOptions(options soundcloudapi.Ge
 	return m.GetTrackInfo(options)
 }
 
+type directTranscodingMockAPI struct {
+	*MockRealSoundCloudAPI
+	GetTranscodingURLFunc func(ctx context.Context, transcodingURL string) (string, error)
+}
+
+func (m *directTranscodingMockAPI) GetTranscodingURL(ctx context.Context, transcodingURL string) (string, error) {
+	if m.GetTranscodingURLFunc != nil {
+		return m.GetTranscodingURLFunc(ctx, transcodingURL)
+	}
+	return "", fmt.Errorf("mock GetTranscodingURL not implemented")
+}
+
 func TestRealStreamExtraction_ValidTrackWithProgressiveFormat(t *testing.T) {
 	// Create a track with progressive transcoding
 	mockTrack := soundcloudapi.Track{
@@ -101,6 +113,54 @@ func TestRealStreamExtraction_ValidTrackWithProgressiveFormat(t *testing.T) {
 	assert.Contains(t, parsedURL.RawQuery, "Policy=")
 	assert.Contains(t, parsedURL.RawQuery, "Signature=")
 	assert.Contains(t, parsedURL.RawQuery, "Key-Pair-Id=")
+}
+
+func TestRealStreamExtraction_UsesDirectTranscodingResolverWhenAvailable(t *testing.T) {
+	mockTrack := soundcloudapi.Track{
+		ID:           424242,
+		Title:        "Second Playback Track",
+		DurationMS:   200000,
+		PermalinkURL: "https://soundcloud.com/artist/second-playback",
+		Media: soundcloudapi.Media{
+			Transcodings: []soundcloudapi.Transcoding{
+				{
+					URL:    "https://api-v2.soundcloud.com/media/soundcloud:tracks:424242/stream/hls",
+					Preset: "mp3_1_0",
+					Format: soundcloudapi.TranscodingFormat{
+						Protocol: "hls",
+						MimeType: "audio/mpeg",
+					},
+				},
+			},
+		},
+	}
+	helperCalls := 0
+	directCalls := 0
+	mockAPI := &directTranscodingMockAPI{
+		MockRealSoundCloudAPI: &MockRealSoundCloudAPI{
+			GetTrackInfoFunc: func(options soundcloudapi.GetTrackInfoOptions) ([]soundcloudapi.Track, error) {
+				return []soundcloudapi.Track{mockTrack}, nil
+			},
+			GetDownloadURLFunc: func(trackURL string, format string) (string, error) {
+				helperCalls++
+				return "", fmt.Errorf("stale permalink helper returned HTTP 404")
+			},
+		},
+		GetTranscodingURLFunc: func(ctx context.Context, transcodingURL string) (string, error) {
+			directCalls++
+			assert.Equal(t, mockTrack.Media.Transcodings[0].URL, transcodingURL)
+			return "https://cf-media.sndcdn.com/direct-playlist.m3u8?Policy=signed", nil
+		},
+	}
+
+	extractor := audio.NewRealSoundCloudStreamExtractor(mockAPI)
+	streamInfo, err := extractor.ExtractStreamURL(context.Background(), 424242)
+
+	require.NoError(t, err)
+	assert.Equal(t, "https://cf-media.sndcdn.com/direct-playlist.m3u8?Policy=signed", streamInfo.URL)
+	assert.Equal(t, "hls", streamInfo.Format)
+	assert.Equal(t, 1, directCalls)
+	assert.Equal(t, 0, helperCalls)
 }
 
 func TestRealStreamExtraction_FallbackToHLSWhenNoProgressive(t *testing.T) {

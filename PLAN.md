@@ -1,6 +1,34 @@
 # Implementation Plan for Open-Source SoundCloud TUI Client in Go
 
-## Current Work: AAC/HLS Playback via ffmpeg (2026-07-07 EDT)
+## Current Work: Playback Reuse + Large Playlist Fixes (2026-07-08 EDT)
+
+Goal: make repeated track playback and very large personal playlists reliable.
+
+Done criteria:
+- [x] Playback stream extraction resolves the selected transcoding URL directly
+  instead of re-resolving the permalink through the upstream helper on every
+  play attempt.
+  Completed 2026-07-08 12:38 EDT.
+- [x] Playlist track hydration uses SoundCloud-sized 50-ID batches and includes
+  playlist secret context when available.
+  Completed 2026-07-08 12:38 EDT.
+- [x] A >300-track playlist fixture fully populates in order.
+  Completed 2026-07-08 12:38 EDT.
+- [x] `./test` and `./build` pass before commit.
+  Completed 2026-07-08 12:38 EDT.
+
+Next small behaviors:
+- [x] Playback extraction behavior: add a regression proving a direct
+  transcoding resolver is used even when permalink-based `GetDownloadURL`
+  would fail.
+  Curiosity poke: can retrying playback fail because the helper refetches track
+  metadata and gets a stale 404? Completed 2026-07-08 12:38 EDT.
+- [x] Playlist hydration behavior: add a >300-track fixture that rejects
+  batches larger than 50 IDs and requires playlist secret context.
+  Curiosity poke: did our prior 100-ID batching still exceed SoundCloud's
+  actual `/tracks?ids=` limit? Completed 2026-07-08 12:38 EDT.
+
+## Previous Work: AAC/HLS Playback via ffmpeg (2026-07-07 EDT)
 
 Goal: decode SoundCloud AAC/HLS streams reliably by shelling out to ffmpeg,
 loading decoded PCM into memory so seeking/skipping is local once playback

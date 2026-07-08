@@ -7,6 +7,8 @@ annotate=[
 	internal/audio/hls_decoder.go = ffmpeg-backed HLS decoder that emits seekable in-memory PCM for SoundCloud streams
 	internal/audio/pcm_streamer.go = seekable Beep streamer over stereo s16le PCM bytes decoded from HLS
 	internal/audio/pcm_streamer_test.go = unit tests for PCM frame alignment, streaming, and seek behavior
-	internal/soundcloud/client_test.go = fixture tests for playlist track hydration via api-v2
+	internal/audio/stream.go = SoundCloud stream extraction and format selection, including direct transcoding URL resolution
+	internal/soundcloud/client.go = SoundCloud api-v2 client for auth, library playlists/favorites, playlist hydration, and media URL resolution
+	internal/soundcloud/client_test.go = fixture tests for playlists, favorites, large playlist hydration, and transcoding media URL resolution
 	tests/unit/audio/ffmpeg_hls_decoder_test.go = tests ffmpeg HLS command construction, PCM output, and URL-redacted errors
 ]

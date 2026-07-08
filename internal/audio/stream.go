@@ -41,6 +41,12 @@ type RealSoundCloudAPI interface {
 	GetDownloadURL(trackURL string, format string) (string, error)
 }
 
+// TranscodingURLResolver resolves a specific api-v2 media transcoding URL to a
+// signed CDN URL, avoiding a second permalink resolve during playback.
+type TranscodingURLResolver interface {
+	GetTranscodingURL(ctx context.Context, transcodingURL string) (string, error)
+}
+
 // SoundCloudStreamExtractor implements StreamExtractor for SoundCloud
 type SoundCloudStreamExtractor struct {
 	api        SoundCloudAPI
@@ -162,18 +168,17 @@ func (e *RealSoundCloudStreamExtractor) ExtractStreamURL(ctx context.Context, tr
 		return nil, fmt.Errorf("no supported transcoding formats available for track %d", trackID)
 	}
 
-	// Get the actual download URL using the SoundCloud API
-	streamURL, err := e.api.GetDownloadURL(track.PermalinkURL, preferredFormat)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get download URL: %w", err)
-	}
-
 	// Determine format from transcoding
 	format := "mp3" // Default
 	if strings.EqualFold(selectedTranscoding.Format.Protocol, "hls") {
 		format = "hls"
 	} else if strings.EqualFold(selectedTranscoding.Format.MimeType, "audio/ogg") {
 		format = "ogg"
+	}
+
+	streamURL, err := e.resolveSelectedTranscoding(ctx, track.PermalinkURL, preferredFormat, selectedTranscoding.URL)
+	if err != nil {
+		return nil, err
 	}
 
 	// Create StreamInfo
@@ -185,6 +190,24 @@ func (e *RealSoundCloudStreamExtractor) ExtractStreamURL(ctx context.Context, tr
 	}
 
 	return streamInfo, nil
+}
+
+// resolveSelectedTranscoding resolves the exact transcoding selected from
+// track metadata, falling back to the legacy permalink helper for old clients.
+func (e *RealSoundCloudStreamExtractor) resolveSelectedTranscoding(ctx context.Context, permalinkURL, preferredFormat, transcodingURL string) (string, error) {
+	if resolver, ok := e.api.(TranscodingURLResolver); ok && transcodingURL != "" {
+		streamURL, err := resolver.GetTranscodingURL(ctx, transcodingURL)
+		if err != nil {
+			return "", fmt.Errorf("failed to resolve transcoding URL: %w", err)
+		}
+		return streamURL, nil
+	}
+
+	streamURL, err := e.api.GetDownloadURL(permalinkURL, preferredFormat)
+	if err != nil {
+		return "", fmt.Errorf("failed to get download URL: %w", err)
+	}
+	return streamURL, nil
 }
 
 // chooseSoundCloudTranscoding prefers the post-progressive-deprecation HLS
