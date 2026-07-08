@@ -14,8 +14,11 @@ Done criteria:
 - [x] TUI extraction/playback timeouts and CLI `--test-audio` startup timeout use
   shared constants, with the loading UI timeout long enough to cover both phases.
   Completed 2026-07-08 16:58 EDT.
+- [x] Secret-token-only private tracks resolve via their secret permalink when no
+  playlist context exists.
+  Completed 2026-07-08 17:03 EDT.
 - [x] `./test` and `./build` pass before commit.
-  Completed 2026-07-08 17:01 EDT.
+  Completed 2026-07-08 17:04 EDT.
 
 Next small behaviors:
 - [x] Playback interruption behavior: add a regression proving `Stop` occurs
@@ -32,6 +35,11 @@ Next small behaviors:
   Curiosity poke: can the loading UI timer fire before sequential extract+decode
   has had its full budget?
   Completed 2026-07-08 16:58 EDT.
+- [x] Secret-token behavior: add a regression proving private favorites can use a
+  secret permalink instead of a naked track ID.
+  Curiosity poke: can a private track hydrate for display outside a playlist but
+  fail during playback because only the ID was reused?
+  Completed 2026-07-08 17:03 EDT.
 
 ## Previous Work: Playback Reuse + Large Playlist Fixes (2026-07-08 EDT)
 

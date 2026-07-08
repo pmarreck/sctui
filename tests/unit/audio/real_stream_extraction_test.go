@@ -209,6 +209,53 @@ func TestRealStreamExtraction_UsesPlaylistContextForPrivateTrack(t *testing.T) {
 	assert.Equal(t, "hls", streamInfo.Format)
 }
 
+func TestRealStreamExtraction_UsesSecretPermalinkWhenNoPlaylistContext(t *testing.T) {
+	mockTrack := soundcloudapi.Track{
+		ID:           888003,
+		Title:        "Favorite Private Track",
+		DurationMS:   180000,
+		PermalinkURL: "https://soundcloud.com/artist/favorite-private",
+		Media: soundcloudapi.Media{
+			Transcodings: []soundcloudapi.Transcoding{
+				{
+					URL:    "https://api-v2.soundcloud.com/media/soundcloud:tracks:888003/stream/hls?track_authorization=secret",
+					Preset: "mp3_1_0",
+					Format: soundcloudapi.TranscodingFormat{
+						Protocol: "hls",
+						MimeType: "audio/mpeg",
+					},
+				},
+			},
+		},
+	}
+	mockAPI := &directTranscodingMockAPI{
+		MockRealSoundCloudAPI: &MockRealSoundCloudAPI{
+			GetTrackInfoFunc: func(options soundcloudapi.GetTrackInfoOptions) ([]soundcloudapi.Track, error) {
+				assert.Nil(t, options.ID)
+				assert.Equal(t, "https://soundcloud.com/artist/favorite-private?secret_token=s-private", options.URL)
+				assert.Zero(t, options.PlaylistID)
+				assert.Empty(t, options.PlaylistSecretToken)
+				return []soundcloudapi.Track{mockTrack}, nil
+			},
+		},
+		GetTranscodingURLFunc: func(ctx context.Context, transcodingURL string) (string, error) {
+			assert.Contains(t, transcodingURL, "track_authorization=secret")
+			return "https://cf-media.sndcdn.com/secret-favorite.m3u8?Policy=signed", nil
+		},
+	}
+
+	extractor := audio.NewRealSoundCloudStreamExtractor(mockAPI)
+	streamInfo, err := extractor.ExtractTrackStreamURL(context.Background(), audio.TrackStreamRequest{
+		TrackID:      888003,
+		PermalinkURL: "https://soundcloud.com/artist/favorite-private",
+		SecretToken:  "s-private",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "https://cf-media.sndcdn.com/secret-favorite.m3u8?Policy=signed", streamInfo.URL)
+	assert.Equal(t, "hls", streamInfo.Format)
+}
+
 func TestRealStreamExtraction_FallbackToHLSWhenNoProgressive(t *testing.T) {
 	mockTrack := soundcloudapi.Track{
 		ID:           987654321,

@@ -108,6 +108,7 @@ func TestPlayerComponent_PlayTrackStopsCurrentPlaybackBeforeExtractingNextStream
 	nextTrack := &soundcloud.Track{
 		ID:                  2,
 		Title:               "Next Private Track",
+		PermalinkURL:        "https://soundcloud.com/peter/next-private",
 		PlaylistID:          777,
 		PlaylistSecretToken: "playlist-secret",
 		SecretToken:         "track-secret",
@@ -125,6 +126,7 @@ func TestPlayerComponent_PlayTrackStopsCurrentPlaybackBeforeExtractingNextStream
 	require.Len(t, mockExtractor.TrackRequests, 1)
 	assert.Equal(t, audio.TrackStreamRequest{
 		TrackID:             2,
+		PermalinkURL:        "https://soundcloud.com/peter/next-private",
 		PlaylistID:          777,
 		PlaylistSecretToken: "playlist-secret",
 		SecretToken:         "track-secret",

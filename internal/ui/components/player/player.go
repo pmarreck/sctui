@@ -458,6 +458,7 @@ func (p *PlayerComponent) extractStreamURL(track *soundcloud.Track) tea.Cmd {
 
 		req := audio.TrackStreamRequest{
 			TrackID:             track.ID,
+			PermalinkURL:        track.PermalinkURL,
 			PlaylistID:          track.PlaylistID,
 			PlaylistSecretToken: track.PlaylistSecretToken,
 			SecretToken:         track.SecretToken,

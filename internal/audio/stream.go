@@ -22,6 +22,7 @@ type StreamInfo struct {
 // playlist context needed when refetching stream metadata for library tracks.
 type TrackStreamRequest struct {
 	TrackID             int64
+	PermalinkURL        string
 	PlaylistID          int64
 	PlaylistSecretToken string
 	SecretToken         string
@@ -159,11 +160,7 @@ func (e *RealSoundCloudStreamExtractor) ExtractTrackStreamURL(ctx context.Contex
 	}
 
 	// Get track information to obtain permalink URL
-	tracks, err := e.api.GetTrackInfoWithOptions(soundcloudapi.GetTrackInfoOptions{
-		ID:                  []int64{req.TrackID},
-		PlaylistID:          req.PlaylistID,
-		PlaylistSecretToken: req.PlaylistSecretToken,
-	})
+	tracks, err := e.api.GetTrackInfoWithOptions(trackInfoOptionsForStreamRequest(req))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get track info: %w", err)
 	}
@@ -213,6 +210,37 @@ func (e *RealSoundCloudStreamExtractor) ExtractTrackStreamURL(ctx context.Contex
 	}
 
 	return streamInfo, nil
+}
+
+// trackInfoOptionsForStreamRequest chooses the SoundCloud metadata lookup that
+// preserves private access: playlist context first, then secret permalink URL.
+func trackInfoOptionsForStreamRequest(req TrackStreamRequest) soundcloudapi.GetTrackInfoOptions {
+	if req.PlaylistID != 0 && req.PlaylistSecretToken != "" {
+		return soundcloudapi.GetTrackInfoOptions{
+			ID:                  []int64{req.TrackID},
+			PlaylistID:          req.PlaylistID,
+			PlaylistSecretToken: req.PlaylistSecretToken,
+		}
+	}
+	if req.SecretToken != "" && req.PermalinkURL != "" {
+		return soundcloudapi.GetTrackInfoOptions{
+			URL: withSoundCloudSecretToken(req.PermalinkURL, req.SecretToken),
+		}
+	}
+	return soundcloudapi.GetTrackInfoOptions{
+		ID: []int64{req.TrackID},
+	}
+}
+
+func withSoundCloudSecretToken(permalinkURL, secretToken string) string {
+	u, err := url.Parse(permalinkURL)
+	if err != nil {
+		return permalinkURL
+	}
+	q := u.Query()
+	q.Set("secret_token", secretToken)
+	u.RawQuery = q.Encode()
+	return u.String()
 }
 
 // resolveSelectedTranscoding resolves the exact transcoding selected from
