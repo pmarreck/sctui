@@ -43,14 +43,17 @@ func (t *authTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 
 // Track represents a SoundCloud track
 type Track struct {
-	ID           int64  `json:"id"`
-	Title        string `json:"title"`
-	Description  string `json:"description"`
-	Duration     int64  `json:"duration"` // Duration in milliseconds
-	ArtworkURL   string `json:"artwork_url"`
-	StreamURL    string `json:"stream_url"`
-	PermalinkURL string `json:"permalink_url"`
-	User         User   `json:"user"`
+	ID                  int64  `json:"id"`
+	Title               string `json:"title"`
+	Description         string `json:"description"`
+	Duration            int64  `json:"duration"` // Duration in milliseconds
+	ArtworkURL          string `json:"artwork_url"`
+	StreamURL           string `json:"stream_url"`
+	PermalinkURL        string `json:"permalink_url"`
+	SecretToken         string `json:"secret_token"`
+	PlaylistID          int64
+	PlaylistSecretToken string
+	User                User `json:"user"`
 }
 
 // Artist returns the artist name for the track
@@ -157,6 +160,7 @@ func (c *Client) GetTrackInfo(url string) (*Track, error) {
 		Duration:     track.DurationMS, // Use DurationMS field
 		ArtworkURL:   track.ArtworkURL,
 		PermalinkURL: track.PermalinkURL,
+		SecretToken:  track.SecretToken,
 		User: User{
 			ID:        track.User.ID,
 			Username:  track.User.Username,
@@ -193,6 +197,7 @@ func (c *Client) Search(query string) ([]Track, error) {
 			Duration:     track.DurationMS, // Use DurationMS field
 			ArtworkURL:   track.ArtworkURL,
 			PermalinkURL: track.PermalinkURL,
+			SecretToken:  track.SecretToken,
 			User: User{
 				ID:        track.User.ID,
 				Username:  track.User.Username,
@@ -421,6 +426,7 @@ type v2Track struct {
 	ArtworkURL   string `json:"artwork_url"`
 	StreamURL    string `json:"stream_url"`
 	PermalinkURL string `json:"permalink_url"`
+	SecretToken  string `json:"secret_token"`
 	User         User   `json:"user"`
 }
 
@@ -433,7 +439,18 @@ func (t v2Track) toTrack() Track {
 		ArtworkURL:   t.ArtworkURL,
 		StreamURL:    t.StreamURL,
 		PermalinkURL: t.PermalinkURL,
+		SecretToken:  t.SecretToken,
 		User:         t.User,
+	}
+}
+
+func applyPlaylistPlaybackContext(tracks []Track, playlistID int64, playlistSecretToken string) {
+	if playlistID == 0 || playlistSecretToken == "" {
+		return
+	}
+	for i := range tracks {
+		tracks[i].PlaylistID = playlistID
+		tracks[i].PlaylistSecretToken = playlistSecretToken
 	}
 }
 
@@ -469,6 +486,7 @@ func (c *Client) PlaylistTracks(playlistID int64) ([]Track, error) {
 		}
 	}
 	if len(shallowIDs) == 0 {
+		applyPlaylistPlaybackContext(tracks, playlistID, playlist.SecretToken)
 		return tracks, nil
 	}
 
@@ -508,6 +526,7 @@ func (c *Client) PlaylistTracks(playlistID int64) ([]Track, error) {
 		}
 	}
 
+	applyPlaylistPlaybackContext(tracks, playlistID, playlist.SecretToken)
 	return tracks, nil
 }
 

@@ -17,6 +17,8 @@ import (
 	"soundcloud-tui/internal/ui/components/player"
 )
 
+const testAudioPlaybackStartTimeout = audio.PlaybackStartTimeout
+
 // validateFlagStyle enforces the CLI convention: multi-letter options use a
 // double dash (--search); a single dash is reserved for single-letter flags
 // (-s). A single-dashed known long option (e.g. -search) is rejected with a
@@ -420,7 +422,7 @@ func testAudioPlayback(client *soundcloud.Client, url string) error {
 
 	// Start playback
 	fmt.Printf("Starting audio playback...\n")
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), testAudioPlaybackStartTimeout)
 	defer cancel()
 
 	err = audioPlayer.PlayStream(ctx, streamInfo)

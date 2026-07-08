@@ -18,6 +18,15 @@ type StreamInfo struct {
 	Duration int64
 }
 
+// TrackStreamRequest carries the SoundCloud track ID plus optional private
+// playlist context needed when refetching stream metadata for library tracks.
+type TrackStreamRequest struct {
+	TrackID             int64
+	PlaylistID          int64
+	PlaylistSecretToken string
+	SecretToken         string
+}
+
 // StreamExtractor defines the interface for extracting streaming URLs
 type StreamExtractor interface {
 	// ExtractStreamURL extracts the actual streaming URL from a track
@@ -28,6 +37,12 @@ type StreamExtractor interface {
 
 	// ValidateStreamURL checks if a streaming URL is still valid
 	ValidateStreamURL(ctx context.Context, streamURL string) (bool, error)
+}
+
+// TrackContextStreamExtractor is implemented by extractors that can use private
+// playlist context instead of refetching stream metadata by a naked public ID.
+type TrackContextStreamExtractor interface {
+	ExtractTrackStreamURL(ctx context.Context, req TrackStreamRequest) (*StreamInfo, error)
 }
 
 // SoundCloudAPI interface for dependency injection and testing
@@ -121,6 +136,12 @@ func NewRealSoundCloudStreamExtractor(api RealSoundCloudAPI) *RealSoundCloudStre
 
 // ExtractStreamURL extracts real streaming URLs from SoundCloud using GetDownloadURL
 func (e *RealSoundCloudStreamExtractor) ExtractStreamURL(ctx context.Context, trackID int64) (*StreamInfo, error) {
+	return e.ExtractTrackStreamURL(ctx, TrackStreamRequest{TrackID: trackID})
+}
+
+// ExtractTrackStreamURL extracts a streaming URL while preserving private
+// playlist context required by SoundCloud's track metadata endpoint.
+func (e *RealSoundCloudStreamExtractor) ExtractTrackStreamURL(ctx context.Context, req TrackStreamRequest) (*StreamInfo, error) {
 	// Check for context cancellation
 	select {
 	case <-ctx.Done():
@@ -133,20 +154,22 @@ func (e *RealSoundCloudStreamExtractor) ExtractStreamURL(ctx context.Context, tr
 		return nil, fmt.Errorf("SoundCloud API client not initialized")
 	}
 
-	if trackID <= 0 {
-		return nil, fmt.Errorf("invalid track ID: %d", trackID)
+	if req.TrackID <= 0 {
+		return nil, fmt.Errorf("invalid track ID: %d", req.TrackID)
 	}
 
 	// Get track information to obtain permalink URL
 	tracks, err := e.api.GetTrackInfoWithOptions(soundcloudapi.GetTrackInfoOptions{
-		ID: []int64{trackID},
+		ID:                  []int64{req.TrackID},
+		PlaylistID:          req.PlaylistID,
+		PlaylistSecretToken: req.PlaylistSecretToken,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get track info: %w", err)
 	}
 
 	if len(tracks) == 0 {
-		return nil, fmt.Errorf("track not found: %d", trackID)
+		return nil, fmt.Errorf("track not found: %d", req.TrackID)
 	}
 
 	track := tracks[0]
@@ -160,12 +183,12 @@ func (e *RealSoundCloudStreamExtractor) ExtractStreamURL(ctx context.Context, tr
 
 	// Check if transcodings are available
 	if len(track.Media.Transcodings) == 0 {
-		return nil, fmt.Errorf("no transcodings available for track %d", trackID)
+		return nil, fmt.Errorf("no transcodings available for track %d", req.TrackID)
 	}
 
 	preferredFormat, selectedTranscoding := chooseSoundCloudTranscoding(track.Media.Transcodings)
 	if selectedTranscoding == nil {
-		return nil, fmt.Errorf("no supported transcoding formats available for track %d", trackID)
+		return nil, fmt.Errorf("no supported transcoding formats available for track %d", req.TrackID)
 	}
 
 	// Determine format from transcoding

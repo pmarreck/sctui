@@ -13,6 +13,12 @@ import (
 	"soundcloud-tui/internal/ui/styles"
 )
 
+const (
+	StreamExtractionTimeout = audio.StreamExtractionTimeout
+	PlaybackStartTimeout    = audio.PlaybackStartTimeout
+	LoadingTimeout          = audio.LoadingTimeout
+)
+
 // State represents the current state of the player component
 type State int
 
@@ -232,7 +238,7 @@ func (p *PlayerComponent) handlePlayTrack(msg PlayTrackMsg) (tea.Model, tea.Cmd)
 
 	// Start loading with timeout
 	return p, tea.Batch(
-		p.extractStreamURL(msg.Track.ID),
+		p.extractStreamURL(msg.Track),
 		p.loadingTimeoutCmd(),
 	)
 }
@@ -304,7 +310,7 @@ func (p *PlayerComponent) togglePlayPause() (tea.Model, tea.Cmd) {
 				p.error = nil
 				p.prematureStopDetected = false
 				return p, tea.Batch(
-					p.extractStreamURL(p.currentTrack.ID),
+					p.extractStreamURL(p.currentTrack),
 					p.loadingTimeoutCmd(),
 				)
 			} else {
@@ -313,7 +319,7 @@ func (p *PlayerComponent) togglePlayPause() (tea.Model, tea.Cmd) {
 				p.error = nil
 				p.prematureStopDetected = false
 				return p, tea.Batch(
-					p.extractStreamURL(p.currentTrack.ID),
+					p.extractStreamURL(p.currentTrack),
 					p.loadingTimeoutCmd(),
 				)
 			}
@@ -430,14 +436,39 @@ func (p *PlayerComponent) decreaseVolume() (tea.Model, tea.Cmd) {
 	}
 }
 
-// extractStreamURL extracts the stream URL for a track
-func (p *PlayerComponent) extractStreamURL(trackID int64) tea.Cmd {
+// extractStreamURL stops any active audio, then extracts the stream URL for the
+// requested track with private playlist context when the extractor supports it.
+func (p *PlayerComponent) extractStreamURL(track *soundcloud.Track) tea.Cmd {
 	return func() tea.Msg {
-		// Use shorter timeout to prevent indefinite loading
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		if track == nil {
+			return StreamInfoMsg{Error: fmt.Errorf("no track selected")}
+		}
+
+		if p.audioPlayer != nil {
+			switch p.audioPlayer.GetState() {
+			case audio.StatePlaying, audio.StatePaused:
+				if err := p.audioPlayer.Stop(); err != nil {
+					return StreamInfoMsg{Error: fmt.Errorf("failed to stop current playback: %w", err)}
+				}
+			}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), StreamExtractionTimeout)
 		defer cancel()
 
-		streamInfo, err := p.streamExtractor.ExtractStreamURL(ctx, trackID)
+		req := audio.TrackStreamRequest{
+			TrackID:             track.ID,
+			PlaylistID:          track.PlaylistID,
+			PlaylistSecretToken: track.PlaylistSecretToken,
+			SecretToken:         track.SecretToken,
+		}
+		var streamInfo *audio.StreamInfo
+		var err error
+		if extractor, ok := p.streamExtractor.(audio.TrackContextStreamExtractor); ok {
+			streamInfo, err = extractor.ExtractTrackStreamURL(ctx, req)
+		} else {
+			streamInfo, err = p.streamExtractor.ExtractStreamURL(ctx, track.ID)
+		}
 		return StreamInfoMsg{
 			StreamInfo: streamInfo,
 			Error:      err,
@@ -453,8 +484,7 @@ type PlaybackErrorMsg struct {
 // playStream starts playing a stream
 func (p *PlayerComponent) playStream(streamInfo *audio.StreamInfo) tea.Cmd {
 	return func() tea.Msg {
-		// Use shorter timeout to prevent hanging the TUI
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), PlaybackStartTimeout)
 		defer cancel()
 
 		err := p.audioPlayer.PlayStream(ctx, streamInfo)
@@ -836,7 +866,7 @@ func (p *PlayerComponent) SetSize(width, height int) {
 
 // loadingTimeoutCmd returns a command that sends a timeout message after delay
 func (p *PlayerComponent) loadingTimeoutCmd() tea.Cmd {
-	return tea.Tick(15*time.Second, func(t time.Time) tea.Msg {
+	return tea.Tick(LoadingTimeout, func(t time.Time) tea.Msg {
 		return LoadingTimeoutMsg{}
 	})
 }

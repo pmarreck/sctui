@@ -163,10 +163,10 @@ func NewBeepPlayer(opts ...BeepOption) *BeepPlayer {
 		volume: 1.0, // Default full volume
 		sink:   speakerSink{},
 		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout: DefaultHTTPTimeout,
 			Transport: &http.Transport{
 				MaxIdleConns:       10,
-				IdleConnTimeout:    30 * time.Second,
+				IdleConnTimeout:    DefaultHTTPTimeout,
 				DisableCompression: false,
 				MaxConnsPerHost:    5,
 			},

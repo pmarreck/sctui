@@ -2,6 +2,7 @@ package ui_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -13,6 +14,31 @@ import (
 	"soundcloud-tui/internal/soundcloud"
 	"soundcloud-tui/internal/ui/components/player"
 )
+
+func runFirstImmediateCommand(cmd tea.Cmd) []tea.Msg {
+	if cmd == nil {
+		return nil
+	}
+	msg := cmd()
+	if msg == nil {
+		return nil
+	}
+	if batch, ok := msg.(tea.BatchMsg); ok {
+		if len(batch) == 0 {
+			return nil
+		}
+		return runFirstImmediateCommand(batch[0])
+	}
+	return []tea.Msg{msg}
+}
+
+func messageTypeNames(msgs []tea.Msg) []string {
+	names := make([]string, 0, len(msgs))
+	for _, msg := range msgs {
+		names = append(names, fmt.Sprintf("%T", msg))
+	}
+	return names
+}
 
 func TestPlayerComponent_NewPlayerComponent(t *testing.T) {
 	component := player.NewPlayerComponent(nil, nil)
@@ -54,6 +80,62 @@ func TestPlayerComponent_PlayTrack(t *testing.T) {
 	assert.Equal(t, player.StateLoading, component.GetState())
 	assert.Equal(t, track, component.GetCurrentTrack())
 	assert.NotNil(t, cmd) // Should return stream extraction command
+}
+
+func TestPlayerComponent_PlayTrackStopsCurrentPlaybackBeforeExtractingNextStream(t *testing.T) {
+	var events []string
+	mockPlayer := &MockAudioPlayer{
+		state: audio.StatePlaying,
+		OnStop: func() {
+			events = append(events, "stop")
+		},
+	}
+	mockExtractor := &MockStreamExtractor{
+		ExtractTrackFunc: func(ctx context.Context, req audio.TrackStreamRequest) (*audio.StreamInfo, error) {
+			events = append(events, "extract")
+			return &audio.StreamInfo{
+				URL:      "https://example.com/next.m3u8",
+				Format:   "hls",
+				Quality:  "hls",
+				Duration: 180000,
+			}, nil
+		},
+	}
+	component := player.NewPlayerComponent(mockPlayer, mockExtractor)
+	component.SetState(player.StatePlaying)
+	component.SetCurrentTrack(&soundcloud.Track{ID: 1, Title: "Already Playing"})
+
+	nextTrack := &soundcloud.Track{
+		ID:                  2,
+		Title:               "Next Private Track",
+		PlaylistID:          777,
+		PlaylistSecretToken: "playlist-secret",
+		SecretToken:         "track-secret",
+	}
+
+	updatedComponent, cmd := component.Update(player.PlayTrackMsg{Track: nextTrack})
+	component = updatedComponent.(*player.PlayerComponent)
+	require.NotNil(t, cmd)
+
+	msgs := runFirstImmediateCommand(cmd)
+
+	assert.Equal(t, player.StateLoading, component.GetState())
+	assert.Equal(t, []string{"stop", "extract"}, events)
+	assert.Equal(t, 1, mockPlayer.stopCalls)
+	require.Len(t, mockExtractor.TrackRequests, 1)
+	assert.Equal(t, audio.TrackStreamRequest{
+		TrackID:             2,
+		PlaylistID:          777,
+		PlaylistSecretToken: "playlist-secret",
+		SecretToken:         "track-secret",
+	}, mockExtractor.TrackRequests[0])
+	assert.Contains(t, messageTypeNames(msgs), "player.StreamInfoMsg")
+}
+
+func TestPlayerComponent_TimeoutsUseSharedAudioDefaults(t *testing.T) {
+	assert.Equal(t, audio.StreamExtractionTimeout, player.StreamExtractionTimeout)
+	assert.Equal(t, audio.PlaybackStartTimeout, player.PlaybackStartTimeout)
+	assert.GreaterOrEqual(t, player.LoadingTimeout, audio.StreamExtractionTimeout+audio.PlaybackStartTimeout)
 }
 
 func TestPlayerComponent_PlaybackControls(t *testing.T) {

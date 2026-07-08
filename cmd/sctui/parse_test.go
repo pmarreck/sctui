@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"testing"
+
+	"soundcloud-tui/internal/audio"
+)
 
 // TestValidateFlagStyle checks the flag-style guard as a classifier over sets:
 // every "valid" arg vector must pass and every "invalid" one must be rejected.
@@ -45,5 +49,11 @@ func TestValidateFlagStyle(t *testing.T) {
 		if err := validateFlagStyle(args, longNames); err == nil {
 			t.Errorf("expected INVALID (error), got nil for %v", args)
 		}
+	}
+}
+
+func TestTestAudioUsesSharedPlaybackStartTimeout(t *testing.T) {
+	if testAudioPlaybackStartTimeout != audio.PlaybackStartTimeout {
+		t.Fatalf("test-audio startup timeout = %v, want shared playback timeout %v", testAudioPlaybackStartTimeout, audio.PlaybackStartTimeout)
 	}
 }

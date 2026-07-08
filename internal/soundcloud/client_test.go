@@ -223,6 +223,67 @@ func TestPlaylistTracksHydratesVeryLargePrivatePlaylistsInSoundCloudSizedBatches
 	}
 }
 
+func TestPlaylistTracksCarriesPrivateContextForPlayback(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/playlists/777":
+			fmt.Fprint(w, `{
+				"secret_token": "playlist-secret",
+				"tracks": [
+					{
+						"id": 301,
+						"title": "Full private track",
+						"duration": 301000,
+						"secret_token": "full-track-secret",
+						"permalink_url": "https://soundcloud.com/peter/full-private",
+						"user": {"username": "fullartist"}
+					},
+					{"id": 302}
+				]
+			}`)
+		case "/tracks":
+			if r.URL.Query().Get("playlistId") != "777" || r.URL.Query().Get("playlistSecretToken") != "playlist-secret" {
+				http.Error(w, "missing playlist context", http.StatusForbidden)
+				return
+			}
+			fmt.Fprint(w, `[{
+				"id": 302,
+				"title": "Hydrated private track",
+				"duration": 302000,
+				"secret_token": "hydrated-track-secret",
+				"permalink_url": "https://soundcloud.com/peter/hydrated-private",
+				"user": {"username": "hydratedartist"}
+			}]`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := &Client{
+		httpClient:   server.Client(),
+		authed:       true,
+		apiV2BaseURL: server.URL,
+	}
+
+	tracks, err := client.PlaylistTracks(777)
+	if err != nil {
+		t.Fatalf("PlaylistTracks returned error: %v", err)
+	}
+	if len(tracks) != 2 {
+		t.Fatalf("got %d tracks, want 2", len(tracks))
+	}
+	for _, track := range tracks {
+		if track.PlaylistID != 777 || track.PlaylistSecretToken != "playlist-secret" {
+			t.Fatalf("track lost playlist playback context: %#v", track)
+		}
+	}
+	if tracks[0].SecretToken != "full-track-secret" || tracks[1].SecretToken != "hydrated-track-secret" {
+		t.Fatalf("track secret tokens were not preserved: %#v", tracks)
+	}
+}
+
 func TestGetTranscodingURLAddsClientIDAndDecodesMediaURL(t *testing.T) {
 	var gotClientID string
 	var gotExisting string

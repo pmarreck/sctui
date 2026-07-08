@@ -163,6 +163,52 @@ func TestRealStreamExtraction_UsesDirectTranscodingResolverWhenAvailable(t *test
 	assert.Equal(t, 0, helperCalls)
 }
 
+func TestRealStreamExtraction_UsesPlaylistContextForPrivateTrack(t *testing.T) {
+	mockTrack := soundcloudapi.Track{
+		ID:           777002,
+		Title:        "Private Playlist Track",
+		DurationMS:   240000,
+		PermalinkURL: "https://soundcloud.com/artist/private-track",
+		Media: soundcloudapi.Media{
+			Transcodings: []soundcloudapi.Transcoding{
+				{
+					URL:    "https://api-v2.soundcloud.com/media/soundcloud:tracks:777002/stream/hls?track_authorization=private",
+					Preset: "mp3_1_0",
+					Format: soundcloudapi.TranscodingFormat{
+						Protocol: "hls",
+						MimeType: "audio/mpeg",
+					},
+				},
+			},
+		},
+	}
+	mockAPI := &directTranscodingMockAPI{
+		MockRealSoundCloudAPI: &MockRealSoundCloudAPI{
+			GetTrackInfoFunc: func(options soundcloudapi.GetTrackInfoOptions) ([]soundcloudapi.Track, error) {
+				assert.Equal(t, []int64{int64(777002)}, options.ID)
+				assert.Equal(t, int64(777), options.PlaylistID)
+				assert.Equal(t, "playlist-secret", options.PlaylistSecretToken)
+				return []soundcloudapi.Track{mockTrack}, nil
+			},
+		},
+		GetTranscodingURLFunc: func(ctx context.Context, transcodingURL string) (string, error) {
+			assert.Contains(t, transcodingURL, "track_authorization=private")
+			return "https://cf-media.sndcdn.com/private-playlist.m3u8?Policy=signed", nil
+		},
+	}
+
+	extractor := audio.NewRealSoundCloudStreamExtractor(mockAPI)
+	streamInfo, err := extractor.ExtractTrackStreamURL(context.Background(), audio.TrackStreamRequest{
+		TrackID:             777002,
+		PlaylistID:          777,
+		PlaylistSecretToken: "playlist-secret",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "https://cf-media.sndcdn.com/private-playlist.m3u8?Policy=signed", streamInfo.URL)
+	assert.Equal(t, "hls", streamInfo.Format)
+}
+
 func TestRealStreamExtraction_FallbackToHLSWhenNoProgressive(t *testing.T) {
 	mockTrack := soundcloudapi.Track{
 		ID:           987654321,

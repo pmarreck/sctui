@@ -18,8 +18,10 @@ type MockAudioPlayer struct {
 	duration        time.Duration
 	playCalls       int
 	playStreamCalls int
+	stopCalls       int
 	lastStreamURL   string
 	lastStreamInfo  *audio.StreamInfo
+	OnStop          func()
 }
 
 func (m *MockAudioPlayer) Play(ctx context.Context, streamURL string) error {
@@ -53,6 +55,10 @@ func (m *MockAudioPlayer) Resume() error {
 }
 
 func (m *MockAudioPlayer) Stop() error {
+	m.stopCalls++
+	if m.OnStop != nil {
+		m.OnStop()
+	}
 	m.state = audio.StateStopped
 	m.position = 0
 	return nil
@@ -97,7 +103,9 @@ func (m *MockAudioPlayer) Close() error {
 
 // MockStreamExtractor implements audio.StreamExtractor for testing
 type MockStreamExtractor struct {
-	ExtractFunc func(ctx context.Context, trackID int64) (*audio.StreamInfo, error)
+	ExtractFunc      func(ctx context.Context, trackID int64) (*audio.StreamInfo, error)
+	ExtractTrackFunc func(ctx context.Context, req audio.TrackStreamRequest) (*audio.StreamInfo, error)
+	TrackRequests    []audio.TrackStreamRequest
 }
 
 func (m *MockStreamExtractor) ExtractStreamURL(ctx context.Context, trackID int64) (*audio.StreamInfo, error) {
@@ -110,6 +118,14 @@ func (m *MockStreamExtractor) ExtractStreamURL(ctx context.Context, trackID int6
 		Quality:  "sq",
 		Duration: 240000,
 	}, nil
+}
+
+func (m *MockStreamExtractor) ExtractTrackStreamURL(ctx context.Context, req audio.TrackStreamRequest) (*audio.StreamInfo, error) {
+	m.TrackRequests = append(m.TrackRequests, req)
+	if m.ExtractTrackFunc != nil {
+		return m.ExtractTrackFunc(ctx, req)
+	}
+	return m.ExtractStreamURL(ctx, req.TrackID)
 }
 
 func (m *MockStreamExtractor) GetAvailableQualities(ctx context.Context, trackID int64) ([]string, error) {

@@ -1,6 +1,39 @@
 # Implementation Plan for Open-Source SoundCloud TUI Client in Go
 
-## Current Work: Playback Reuse + Large Playlist Fixes (2026-07-08 EDT)
+## Current Work: Interruptible Playback + Timeout Alignment (2026-07-08 EDT)
+
+Goal: make selecting a second track interrupt current playback before SoundCloud
+stream resolution, preserve private playlist context through playback, and remove
+the mismatched TUI/CLI startup timeouts.
+
+Done criteria:
+- [x] Selecting a new track while audio is playing stops the active player before
+  resolving the next stream URL.
+- [x] Playlist/favorite tracks carry any SoundCloud secret context needed for
+  private stream extraction.
+- [x] TUI extraction/playback timeouts and CLI `--test-audio` startup timeout use
+  shared constants, with the loading UI timeout long enough to cover both phases.
+  Completed 2026-07-08 16:58 EDT.
+- [x] `./test` and `./build` pass before commit.
+  Completed 2026-07-08 17:01 EDT.
+
+Next small behaviors:
+- [x] Playback interruption behavior: add a regression proving `Stop` occurs
+  before the next stream extraction command.
+  Curiosity poke: does Bubble Tea `Batch` execution hide ordering assumptions?
+  Completed 2026-07-08 16:58 EDT.
+- [x] Private stream behavior: add a regression proving playlist ID/secret context
+  reaches `GetTrackInfoWithOptions`.
+  Curiosity poke: can private playlist tracks hydrate for display but fail later
+  because playback refetches by naked track ID?
+  Completed 2026-07-08 16:58 EDT.
+- [x] Timeout behavior: add a regression proving TUI and CLI startup paths use the
+  same audio timeout constants.
+  Curiosity poke: can the loading UI timer fire before sequential extract+decode
+  has had its full budget?
+  Completed 2026-07-08 16:58 EDT.
+
+## Previous Work: Playback Reuse + Large Playlist Fixes (2026-07-08 EDT)
 
 Goal: make repeated track playback and very large personal playlists reliable.
 

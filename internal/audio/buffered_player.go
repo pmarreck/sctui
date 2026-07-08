@@ -146,10 +146,10 @@ func NewBufferedStreamPlayer(opts ...BufferedOption) *BufferedStreamPlayer {
 		volume: 1.0,
 		sink:   speakerSink{},
 		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout: DefaultHTTPTimeout,
 			Transport: &http.Transport{
 				MaxIdleConns:       10,
-				IdleConnTimeout:    30 * time.Second,
+				IdleConnTimeout:    DefaultHTTPTimeout,
 				DisableCompression: false,
 			},
 		},
@@ -466,9 +466,6 @@ func (p *BufferedStreamPlayer) downloadStreamAttempt() bool {
 
 // waitForPreload waits for the initial buffer to fill
 func (p *BufferedStreamPlayer) waitForPreload(ctx context.Context) error {
-	timeout := time.NewTimer(10 * time.Second)
-	defer timeout.Stop()
-
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
@@ -476,8 +473,6 @@ func (p *BufferedStreamPlayer) waitForPreload(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-timeout.C:
-			return fmt.Errorf("preload timeout")
 		case <-ticker.C:
 			if p.buffer.isPreloaded() {
 				// BufferedStreamPlayer.waitForPreload: Preload completed")
