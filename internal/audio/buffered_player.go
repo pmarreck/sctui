@@ -11,7 +11,6 @@ import (
 	"github.com/gopxl/beep"
 	"github.com/gopxl/beep/effects"
 	"github.com/gopxl/beep/mp3"
-	"github.com/gopxl/beep/speaker"
 	"github.com/gopxl/beep/wav"
 )
 
@@ -28,12 +27,14 @@ type BufferedStreamPlayer struct {
 	volumeCtrl *effects.Volume
 
 	// Speaker management
+	sink           AudioSink
 	speakerInit    sync.Once
 	speakerInitErr error
 
 	// Stream information
 	streamURL  string
 	httpClient *http.Client
+	hlsDecoder HLSDecoder
 
 	// Buffer management
 	buffer      *StreamBuffer
@@ -117,6 +118,25 @@ func WithPreloadTimeout(d time.Duration) BufferedOption {
 	}
 }
 
+// WithBufferedAudioSink injects the audio-output port for buffered playback.
+func WithBufferedAudioSink(s AudioSink) BufferedOption {
+	return func(p *BufferedStreamPlayer) {
+		if s != nil {
+			p.sink = s
+		}
+	}
+}
+
+// WithBufferedHLSDecoder injects the HLS decoder used by PlayStream for HLS
+// SoundCloud streams.
+func WithBufferedHLSDecoder(d HLSDecoder) BufferedOption {
+	return func(p *BufferedStreamPlayer) {
+		if d != nil {
+			p.hlsDecoder = d
+		}
+	}
+}
+
 // NewBufferedStreamPlayer creates a new buffered streaming audio player. Pass
 // options (WithBufferedHTTPClient, WithBufferedRetry, WithPreloadTimeout) to
 // inject fakes/limits for offline testing.
@@ -124,6 +144,7 @@ func NewBufferedStreamPlayer(opts ...BufferedOption) *BufferedStreamPlayer {
 	p := &BufferedStreamPlayer{
 		state:  StateStopped,
 		volume: 1.0,
+		sink:   speakerSink{},
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 			Transport: &http.Transport{
@@ -139,6 +160,7 @@ func NewBufferedStreamPlayer(opts ...BufferedOption) *BufferedStreamPlayer {
 		reconnectDelay:  5 * time.Second, // Delay before reconnection attempts
 		preloadTimeout:  5 * time.Second, // Wait for initial buffer before giving up
 		positionTracker: &PositionTracker{},
+		hlsDecoder:      NewFFmpegHLSDecoder(),
 	}
 	for _, opt := range opts {
 		opt(p)
@@ -148,6 +170,22 @@ func NewBufferedStreamPlayer(opts ...BufferedOption) *BufferedStreamPlayer {
 
 // Play starts or resumes playback from a streaming URL with buffering
 func (p *BufferedStreamPlayer) Play(ctx context.Context, streamURL string) error {
+	return p.playBufferedURL(ctx, streamURL)
+}
+
+// PlayStream starts playback from extracted stream metadata, using ffmpeg for
+// HLS streams and the existing buffered HTTP path for MP3/WAV URLs.
+func (p *BufferedStreamPlayer) PlayStream(ctx context.Context, streamInfo *StreamInfo) error {
+	if streamInfo == nil {
+		return fmt.Errorf("stream info cannot be nil")
+	}
+	if isHLSStream(streamInfo.Format, streamInfo.URL) {
+		return p.playDecodedHLS(ctx, streamInfo.URL)
+	}
+	return p.playBufferedURL(ctx, streamInfo.URL)
+}
+
+func (p *BufferedStreamPlayer) playBufferedURL(ctx context.Context, streamURL string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -195,8 +233,9 @@ func (p *BufferedStreamPlayer) Play(ctx context.Context, streamURL string) error
 	}
 
 	// Initialize speaker if needed
+	sink := p.audioSink()
 	p.speakerInit.Do(func() {
-		p.speakerInitErr = speaker.Init(format.SampleRate, format.SampleRate.N(time.Second/10))
+		p.speakerInitErr = sink.Init(format.SampleRate, format.SampleRate.N(time.Second/10))
 	})
 	if p.speakerInitErr != nil {
 		streamer.Close()
@@ -227,7 +266,7 @@ func (p *BufferedStreamPlayer) Play(ctx context.Context, streamURL string) error
 
 	// Start playback with callback
 	done := make(chan bool)
-	speaker.Play(beep.Seq(p.ctrl, beep.Callback(func() {
+	sink.Play(beep.Seq(p.ctrl, beep.Callback(func() {
 		p.mu.Lock()
 		p.state = StateStopped
 		p.positionTracker.Stop()
@@ -247,6 +286,84 @@ func (p *BufferedStreamPlayer) Play(ctx context.Context, streamURL string) error
 	// Start position tracking goroutine
 	go p.trackPositionWithBuffer(done)
 
+	return nil
+}
+
+func (p *BufferedStreamPlayer) playDecodedHLS(ctx context.Context, streamURL string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if streamURL == "" {
+		return fmt.Errorf("stream URL cannot be empty")
+	}
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
+	if err := p.stopLocked(); err != nil {
+		return fmt.Errorf("failed to stop existing playback: %w", err)
+	}
+
+	decoder := p.hlsDecoder
+	if decoder == nil {
+		decoder = NewFFmpegHLSDecoder()
+	}
+	streamer, format, err := decoder.Decode(ctx, streamURL)
+	if err != nil {
+		return fmt.Errorf("failed to decode HLS stream: %w", err)
+	}
+
+	sink := p.sink
+	if sink == nil {
+		sink = speakerSink{}
+	}
+	p.speakerInit.Do(func() {
+		p.speakerInitErr = sink.Init(format.SampleRate, format.SampleRate.N(time.Second/10))
+	})
+	if p.speakerInitErr != nil {
+		streamer.Close()
+		return fmt.Errorf("failed to initialize speaker: %w", p.speakerInitErr)
+	}
+
+	p.streamer = streamer
+	p.format = format
+	p.streamURL = streamURL
+	p.buffer = nil
+
+	p.volumeCtrl = &effects.Volume{
+		Streamer: p.streamer,
+		Base:     2,
+		Volume:   p.volumeToBeepVolume(p.volume),
+		Silent:   p.volume == 0,
+	}
+	p.ctrl = &beep.Ctrl{
+		Streamer: p.volumeCtrl,
+		Paused:   false,
+	}
+
+	p.positionTracker.Start(format.SampleRate)
+
+	done := make(chan bool)
+	sink.Play(beep.Seq(p.ctrl, beep.Callback(func() {
+		p.mu.Lock()
+		p.state = StateStopped
+		p.positionTracker.Stop()
+		if p.onStateChange != nil {
+			go p.onStateChange(p.state)
+		}
+		p.mu.Unlock()
+		done <- true
+	})))
+
+	p.state = StatePlaying
+	if p.onStateChange != nil {
+		go p.onStateChange(p.state)
+	}
+
+	go p.trackPositionWithBuffer(done)
 	return nil
 }
 
@@ -401,9 +518,10 @@ func (p *BufferedStreamPlayer) Pause() error {
 	}
 
 	if p.ctrl != nil {
-		speaker.Lock()
+		sink := p.audioSink()
+		sink.Lock()
 		p.ctrl.Paused = true
-		speaker.Unlock()
+		sink.Unlock()
 		p.positionTracker.Pause()
 	}
 
@@ -425,9 +543,10 @@ func (p *BufferedStreamPlayer) Resume() error {
 	}
 
 	if p.ctrl != nil {
-		speaker.Lock()
+		sink := p.audioSink()
+		sink.Lock()
 		p.ctrl.Paused = false
-		speaker.Unlock()
+		sink.Unlock()
 		p.positionTracker.Resume()
 	}
 
@@ -466,9 +585,10 @@ func (p *BufferedStreamPlayer) GetPosition() time.Duration {
 		return 0
 	}
 
-	speaker.Lock()
+	sink := p.audioSink()
+	sink.Lock()
 	position := p.streamer.Position()
-	speaker.Unlock()
+	sink.Unlock()
 
 	return p.format.SampleRate.D(position)
 }
@@ -507,10 +627,11 @@ func (p *BufferedStreamPlayer) SetVolume(volume float64) error {
 	p.volume = volume
 
 	if p.volumeCtrl != nil {
-		speaker.Lock()
+		sink := p.audioSink()
+		sink.Lock()
 		p.volumeCtrl.Volume = p.volumeToBeepVolume(volume)
 		p.volumeCtrl.Silent = volume == 0
-		speaker.Unlock()
+		sink.Unlock()
 	}
 
 	return nil
@@ -544,9 +665,10 @@ func (p *BufferedStreamPlayer) Seek(position time.Duration) error {
 	// Convert time position to sample position
 	samplePos := p.format.SampleRate.N(position)
 
-	speaker.Lock()
+	sink := p.audioSink()
+	sink.Lock()
 	err := p.streamer.Seek(samplePos)
-	speaker.Unlock()
+	sink.Unlock()
 
 	if err == nil && p.positionTracker != nil {
 		p.positionTracker.SetPosition(position)
@@ -587,12 +709,20 @@ func (p *BufferedStreamPlayer) SetErrorCallback(callback func(error)) {
 
 // Helper methods
 
+func (p *BufferedStreamPlayer) audioSink() AudioSink {
+	if p.sink != nil {
+		return p.sink
+	}
+	return speakerSink{}
+}
+
 // stopLocked stops playback without acquiring lock (caller must hold lock)
 func (p *BufferedStreamPlayer) stopLocked() error {
 	if p.ctrl != nil {
-		speaker.Lock()
+		sink := p.audioSink()
+		sink.Lock()
 		p.ctrl.Paused = true
-		speaker.Unlock()
+		sink.Unlock()
 	}
 
 	if p.buffer != nil && p.buffer.cancel != nil {
@@ -683,19 +813,20 @@ func (p *BufferedStreamPlayer) attemptBufferRecovery() {
 
 	// Pause playback temporarily
 	if p.ctrl != nil {
-		speaker.Lock()
+		sink := p.audioSink()
+		sink.Lock()
 		wasPlaying := !p.ctrl.Paused
 		p.ctrl.Paused = true
-		speaker.Unlock()
+		sink.Unlock()
 
 		// Wait for buffer to recover
 		time.Sleep(p.reconnectDelay)
 
 		// Check if buffer is healthier now
 		if p.buffer != nil && p.buffer.isHealthy() && wasPlaying {
-			speaker.Lock()
+			sink.Lock()
 			p.ctrl.Paused = false
-			speaker.Unlock()
+			sink.Unlock()
 		}
 	}
 }

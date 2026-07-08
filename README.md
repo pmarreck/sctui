@@ -21,7 +21,7 @@ This application uses SoundCloud's undocumented internal API through a reverse-e
 
 ✅ **Fully Implemented:**
 - **Interactive TUI** with Bubble Tea framework
-- **Real audio playback** using Beep library
+- **Real audio playback** using Beep plus ffmpeg-backed HLS decoding
 - **Search and browse** SoundCloud tracks
 - **Player controls** (play/pause, seek, volume)
 - **Silent Firefox session login** for personal/private SoundCloud library access
@@ -47,6 +47,7 @@ This application uses SoundCloud's undocumented internal API through a reverse-e
 
 ### Prerequisites
 - Go 1.21 or later
+- ffmpeg (required for current SoundCloud AAC/HLS streams; Nix builds wrap it automatically)
 - Audio system (ALSA/PulseAudio on Linux, Core Audio on macOS, DirectSound on Windows)
 
 ### Build from Source
@@ -75,13 +76,13 @@ Launches the full interactive Terminal UI with audio playback capabilities.
 ### CLI Mode Examples
 ```bash
 # Search for tracks
-./bin/sctui -search "lofi hip hop"
+./bin/sctui --search "lofi hip hop"
 
 # Get track information
-./bin/sctui -track "https://soundcloud.com/artist/track"
+./bin/sctui --track "https://soundcloud.com/artist/track"
 
 # Show help
-./bin/sctui -help
+./bin/sctui --help
 ```
 
 ### TUI Controls
@@ -153,8 +154,9 @@ go test -cover ./...
 ## Technical Architecture
 
 ### Audio Implementation
-- **Beep Library**: High-performance audio playback with MP3/WAV support
-- **HTTP Streaming**: Direct streaming from SoundCloud CDN (no downloads)
+- **Beep Library**: High-performance audio playback with seekable streamers
+- **AAC/HLS Decoding**: Current SoundCloud HLS streams decode through ffmpeg into in-memory stereo PCM
+- **Progressive Fallback**: Older MP3/WAV URLs still use the direct HTTP decoder path
 - **Real-time Position Tracking**: 250ms update intervals for smooth progress
 - **Thread-safe Player**: Concurrent-safe with proper mutex locking
 
@@ -167,7 +169,7 @@ go test -cover ./...
 ### SoundCloud Integration  
 - **Reverse-engineered API**: Uses `github.com/zackradisic/soundcloud-api`
 - **No Official Credentials**: Works without API keys or authentication
-- **Real Stream URLs**: Extracts actual CDN URLs for audio playback
+- **Real Stream URLs**: Prefers HLS CDN URLs, with progressive fallback
 - **CloudFront Authentication**: Handles signed URL parameters
 
 ## Roadmap

@@ -157,30 +157,7 @@ func (e *RealSoundCloudStreamExtractor) ExtractStreamURL(ctx context.Context, tr
 		return nil, fmt.Errorf("no transcodings available for track %d", trackID)
 	}
 
-	// Determine best format - prefer progressive over HLS for better audio player compatibility
-	var preferredFormat string
-	var selectedTranscoding *soundcloudapi.Transcoding
-
-	// First pass: look for progressive format
-	for _, transcoding := range track.Media.Transcodings {
-		if transcoding.Format.Protocol == "progressive" {
-			preferredFormat = "progressive"
-			selectedTranscoding = &transcoding
-			break
-		}
-	}
-
-	// Second pass: fallback to HLS if no progressive available
-	if selectedTranscoding == nil {
-		for _, transcoding := range track.Media.Transcodings {
-			if transcoding.Format.Protocol == "hls" {
-				preferredFormat = "hls"
-				selectedTranscoding = &transcoding
-				break
-			}
-		}
-	}
-
+	preferredFormat, selectedTranscoding := chooseSoundCloudTranscoding(track.Media.Transcodings)
 	if selectedTranscoding == nil {
 		return nil, fmt.Errorf("no supported transcoding formats available for track %d", trackID)
 	}
@@ -193,10 +170,10 @@ func (e *RealSoundCloudStreamExtractor) ExtractStreamURL(ctx context.Context, tr
 
 	// Determine format from transcoding
 	format := "mp3" // Default
-	if selectedTranscoding.Format.MimeType == "audio/ogg" {
-		format = "ogg"
-	} else if selectedTranscoding.Format.Protocol == "hls" {
+	if strings.EqualFold(selectedTranscoding.Format.Protocol, "hls") {
 		format = "hls"
+	} else if strings.EqualFold(selectedTranscoding.Format.MimeType, "audio/ogg") {
+		format = "ogg"
 	}
 
 	// Create StreamInfo
@@ -208,6 +185,31 @@ func (e *RealSoundCloudStreamExtractor) ExtractStreamURL(ctx context.Context, tr
 	}
 
 	return streamInfo, nil
+}
+
+// chooseSoundCloudTranscoding prefers the post-progressive-deprecation HLS
+// protocol, biasing non-Opus HLS when metadata lets us identify it.
+func chooseSoundCloudTranscoding(transcodings []soundcloudapi.Transcoding) (string, *soundcloudapi.Transcoding) {
+	for i := range transcodings {
+		transcoding := transcodings[i]
+		if strings.EqualFold(transcoding.Format.Protocol, "hls") &&
+			!strings.Contains(strings.ToLower(transcoding.Format.MimeType), "ogg") {
+			return "hls", &transcoding
+		}
+	}
+	for i := range transcodings {
+		transcoding := transcodings[i]
+		if strings.EqualFold(transcoding.Format.Protocol, "hls") {
+			return "hls", &transcoding
+		}
+	}
+	for i := range transcodings {
+		transcoding := transcodings[i]
+		if strings.EqualFold(transcoding.Format.Protocol, "progressive") {
+			return "progressive", &transcoding
+		}
+	}
+	return "", nil
 }
 
 // GetAvailableQualities returns available qualities for track using real API

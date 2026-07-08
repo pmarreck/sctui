@@ -1,6 +1,12 @@
 # Dirtree: Stateful directory trees in the CLI for humans and LLMs. https://github.com/pmarreck/dirtree
 ver=1.2
 annotate=[
+	LEARNINGS.md = environment and repo workflow learnings discovered during implementation
+	MISTAKES.md = workflow mistakes observed during agent work for future avoidance
 	internal/audio/buffered_preload_test.go = regression test for completed short downloads satisfying preload
+	internal/audio/hls_decoder.go = ffmpeg-backed HLS decoder that emits seekable in-memory PCM for SoundCloud streams
+	internal/audio/pcm_streamer.go = seekable Beep streamer over stereo s16le PCM bytes decoded from HLS
+	internal/audio/pcm_streamer_test.go = unit tests for PCM frame alignment, streaming, and seek behavior
 	internal/soundcloud/client_test.go = fixture tests for playlist track hydration via api-v2
+	tests/unit/audio/ffmpeg_hls_decoder_test.go = tests ffmpeg HLS command construction, PCM output, and URL-redacted errors
 ]

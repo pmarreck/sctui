@@ -12,13 +12,30 @@ import (
 
 // MockAudioPlayer implements audio.Player for testing
 type MockAudioPlayer struct {
-	state    audio.PlayerState
-	volume   float64
-	position time.Duration
-	duration time.Duration
+	state           audio.PlayerState
+	volume          float64
+	position        time.Duration
+	duration        time.Duration
+	playCalls       int
+	playStreamCalls int
+	lastStreamURL   string
+	lastStreamInfo  *audio.StreamInfo
 }
 
 func (m *MockAudioPlayer) Play(ctx context.Context, streamURL string) error {
+	m.playCalls++
+	m.lastStreamURL = streamURL
+	m.state = audio.StatePlaying
+	return nil
+}
+
+func (m *MockAudioPlayer) PlayStream(ctx context.Context, streamInfo *audio.StreamInfo) error {
+	m.playStreamCalls++
+	if streamInfo != nil {
+		info := *streamInfo
+		m.lastStreamInfo = &info
+		m.lastStreamURL = streamInfo.URL
+	}
 	m.state = audio.StatePlaying
 	return nil
 }

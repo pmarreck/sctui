@@ -45,11 +45,10 @@
           nativeBuildInputs = audioNativeInputs ++ [ pkgs.makeWrapper ];
           buildInputs = audioBuildInputs;
 
-          # sctui shells out to `sqlite3` to read the browser's SoundCloud
-          # session cookie; put it on the binary's PATH so auth works on a
-          # pristine system (it falls back to anonymous if truly absent).
+          # sctui shells out to `sqlite3` for browser cookies and `ffmpeg` for
+          # SoundCloud AAC/HLS decoding; put both on PATH for installed runs.
           postInstall = ''
-            wrapProgram $out/bin/sctui --prefix PATH : ${lib.makeBinPath [ pkgs.sqlite ]}
+            wrapProgram $out/bin/sctui --prefix PATH : ${lib.makeBinPath [ pkgs.sqlite pkgs.ffmpeg ]}
           '';
 
           meta = {
@@ -120,6 +119,7 @@
             pkgs.gotools
             pkgs.go-tools # staticcheck et al.
             pkgs.sqlite # sqlite3, for reading the browser session cookie
+            pkgs.ffmpeg # AAC/HLS decoding for current SoundCloud streams
           ]
           ++ audioNativeInputs
           ++ audioBuildInputs;

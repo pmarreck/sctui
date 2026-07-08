@@ -257,7 +257,7 @@ func (p *PlayerComponent) handleStreamInfo(msg StreamInfoMsg) (tea.Model, tea.Cm
 	}
 
 	// Stay in loading state until playback actually starts
-	return p, p.playStream(msg.StreamInfo.URL)
+	return p, p.playStream(msg.StreamInfo)
 }
 
 // togglePlayPause toggles between play and pause
@@ -451,13 +451,13 @@ type PlaybackErrorMsg struct {
 }
 
 // playStream starts playing a stream
-func (p *PlayerComponent) playStream(streamURL string) tea.Cmd {
+func (p *PlayerComponent) playStream(streamInfo *audio.StreamInfo) tea.Cmd {
 	return func() tea.Msg {
 		// Use shorter timeout to prevent hanging the TUI
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
-		err := p.audioPlayer.Play(ctx, streamURL)
+		err := p.audioPlayer.PlayStream(ctx, streamInfo)
 		if err != nil {
 			return PlaybackErrorMsg{
 				Error: fmt.Errorf("failed to play stream: %w", err),

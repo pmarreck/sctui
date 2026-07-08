@@ -1,6 +1,45 @@
 # Implementation Plan for Open-Source SoundCloud TUI Client in Go
 
-## Current Work: Personal Playlist TUI Integration (2026-07-07 EDT)
+## Current Work: AAC/HLS Playback via ffmpeg (2026-07-07 EDT)
+
+Goal: decode SoundCloud AAC/HLS streams reliably by shelling out to ffmpeg,
+loading decoded PCM into memory so seeking/skipping is local once playback
+starts.
+
+Done criteria:
+- [x] Real stream extraction prefers HLS when available and falls back to
+  progressive for older tracks.
+- [x] HLS playback decodes through an injectable ffmpeg adapter into an
+  in-memory seekable PCM streamer.
+- [x] Existing MP3/WAV URL playback remains compatible through `Play(ctx, url)`.
+- [x] TUI and CLI preserve `StreamInfo.Format` instead of losing it at the URL
+  boundary.
+- [x] Nix package/dev shell expose `ffmpeg` at runtime.
+- [x] `./test` and `./build` pass before commit.
+
+Next small behaviors:
+- [x] Extractor behavior: change existing progressive-preference tests to prove
+  HLS is selected first.
+  Curiosity poke: do we accidentally pick Opus HLS before AAC HLS when both are
+  listed? Completed 2026-07-07 20:52 EDT.
+- [x] Audio core behavior: add a pure PCM memory streamer test for stream,
+  duration, and repeated seek.
+  Curiosity poke: can frame alignment break when ffmpeg returns an odd byte
+  count? Completed 2026-07-07 20:52 EDT.
+- [x] Decoder behavior: add an ffmpeg command-runner test that verifies HLS URLs
+  are decoded to stereo 44.1kHz s16le without invoking real ffmpeg.
+  Curiosity poke: do context cancellation and subprocess stderr produce useful,
+  token-safe errors? Completed 2026-07-07 20:52 EDT.
+- [x] Playback wiring behavior: add a headless player test showing
+  `PlayStream(... Format: "hls")` uses the decoder and supports seeking.
+  Curiosity poke: does old `Play(ctx, url)` still route MP3/WAV through the
+  HTTP decoder unchanged? Completed 2026-07-07 20:52 EDT.
+- [x] Packaging behavior: add `ffmpeg` to Nix wrapper/dev shell and verify the
+  binary can find it.
+  Curiosity poke: is `ffmpeg` on PATH both in `nix run`/installed binary and
+  `nix develop`? Completed 2026-07-07 20:52 EDT.
+
+## Previous Work: Personal Playlist TUI Integration (2026-07-07 EDT)
 
 Goal: let a signed-in SoundCloud browser session browse personal/private playlists
 inside the interactive TUI and play selected tracks.

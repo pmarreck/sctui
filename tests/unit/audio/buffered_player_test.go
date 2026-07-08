@@ -126,6 +126,7 @@ func TestBufferedStreamPlayer_PlayShortCompletedDownload(t *testing.T) {
 	shortWAV := makeTestWAV(8000, 8000)
 	player := audio.NewBufferedStreamPlayer(
 		audio.WithBufferedHTTPClient(newWAVResponder(shortWAV)),
+		audio.WithBufferedAudioSink(fakeSink{}),
 		audio.WithPreloadTimeout(300*time.Millisecond),
 	)
 	defer player.Close()
@@ -133,6 +134,32 @@ func TestBufferedStreamPlayer_PlayShortCompletedDownload(t *testing.T) {
 	err := player.Play(context.Background(), "https://example.com/short.wav")
 	require.NoError(t, err)
 	assert.Equal(t, audio.StatePlaying, player.GetState())
+}
+
+func TestBufferedStreamPlayer_PlayStreamHLSUsesInjectedDecoder(t *testing.T) {
+	decoder := &fakeHLSDecoder{
+		pcm: repeatedStereoPCM16LEFrames(20, [2]int16{16384, -16384}),
+	}
+	player := audio.NewBufferedStreamPlayer(
+		audio.WithBufferedAudioSink(fakeSink{}),
+		audio.WithBufferedHTTPClient(newFailingHTTPClient()),
+		audio.WithBufferedHLSDecoder(decoder),
+	)
+	defer player.Close()
+
+	err := player.PlayStream(context.Background(), &audio.StreamInfo{
+		URL:    "https://cf-media.sndcdn.com/playlist.m3u8?Policy=secret",
+		Format: "hls",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, decoder.calls)
+	assert.Equal(t, "https://cf-media.sndcdn.com/playlist.m3u8?Policy=secret", decoder.url)
+	assert.Equal(t, audio.StatePlaying, player.GetState())
+	assert.Greater(t, player.GetDuration(), time.Duration(0))
+	seekPosition := 10*time.Second/44100 + time.Nanosecond
+	require.NoError(t, player.Seek(seekPosition))
+	assert.Equal(t, seekPosition, player.GetPosition())
 }
 
 func TestBufferedStreamPlayer_SeekOperations(t *testing.T) {

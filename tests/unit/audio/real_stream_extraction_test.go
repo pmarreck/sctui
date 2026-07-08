@@ -48,9 +48,9 @@ func (m *MockRealSoundCloudAPI) GetTrackInfoWithOptions(options soundcloudapi.Ge
 func TestRealStreamExtraction_ValidTrackWithProgressiveFormat(t *testing.T) {
 	// Create a track with progressive transcoding
 	mockTrack := soundcloudapi.Track{
-		ID:         123456789,
-		Title:      "Test Track",
-		DurationMS: 180000, // 3 minutes
+		ID:           123456789,
+		Title:        "Test Track",
+		DurationMS:   180000, // 3 minutes
 		PermalinkURL: "https://soundcloud.com/artist/test-track",
 		Media: soundcloudapi.Media{
 			Transcodings: []soundcloudapi.Transcoding{
@@ -105,9 +105,9 @@ func TestRealStreamExtraction_ValidTrackWithProgressiveFormat(t *testing.T) {
 
 func TestRealStreamExtraction_FallbackToHLSWhenNoProgressive(t *testing.T) {
 	mockTrack := soundcloudapi.Track{
-		ID:         987654321,
-		Title:      "HLS Only Track",
-		DurationMS: 240000,
+		ID:           987654321,
+		Title:        "HLS Only Track",
+		DurationMS:   240000,
 		PermalinkURL: "https://soundcloud.com/artist/hls-track",
 		Media: soundcloudapi.Media{
 			Transcodings: []soundcloudapi.Transcoding{
@@ -147,11 +147,49 @@ func TestRealStreamExtraction_FallbackToHLSWhenNoProgressive(t *testing.T) {
 	assert.Equal(t, "hls", streamInfo.Quality)
 }
 
-func TestRealStreamExtraction_PreferProgressiveOverHLS(t *testing.T) {
+func TestRealStreamExtraction_HLSOpusStillRoutesAsHLS(t *testing.T) {
 	mockTrack := soundcloudapi.Track{
-		ID:         555666777,
-		Title:      "Multi-Format Track",
-		DurationMS: 200000,
+		ID:           121212,
+		Title:        "HLS Opus Track",
+		DurationMS:   120000,
+		PermalinkURL: "https://soundcloud.com/artist/hls-opus-track",
+		Media: soundcloudapi.Media{
+			Transcodings: []soundcloudapi.Transcoding{
+				{
+					URL:    "https://api-v2.soundcloud.com/media/soundcloud:tracks:121212/stream/hls",
+					Preset: "opus_0_0",
+					Format: soundcloudapi.TranscodingFormat{
+						Protocol: "hls",
+						MimeType: "audio/ogg",
+					},
+				},
+			},
+		},
+	}
+
+	mockAPI := &MockRealSoundCloudAPI{
+		GetTrackInfoFunc: func(options soundcloudapi.GetTrackInfoOptions) ([]soundcloudapi.Track, error) {
+			return []soundcloudapi.Track{mockTrack}, nil
+		},
+		GetDownloadURLFunc: func(trackURL string, format string) (string, error) {
+			assert.Equal(t, "hls", format)
+			return "https://cf-media.sndcdn.com/opus-playlist.m3u8?auth=params", nil
+		},
+	}
+
+	extractor := audio.NewRealSoundCloudStreamExtractor(mockAPI)
+	streamInfo, err := extractor.ExtractStreamURL(context.Background(), 121212)
+
+	require.NoError(t, err)
+	assert.Equal(t, "hls", streamInfo.Format)
+	assert.Equal(t, "hls", streamInfo.Quality)
+}
+
+func TestRealStreamExtraction_PreferHLSOverProgressive(t *testing.T) {
+	mockTrack := soundcloudapi.Track{
+		ID:           555666777,
+		Title:        "Multi-Format Track",
+		DurationMS:   200000,
 		PermalinkURL: "https://soundcloud.com/artist/multi-format",
 		Media: soundcloudapi.Media{
 			Transcodings: []soundcloudapi.Transcoding{
@@ -180,9 +218,8 @@ func TestRealStreamExtraction_PreferProgressiveOverHLS(t *testing.T) {
 			return []soundcloudapi.Track{mockTrack}, nil
 		},
 		GetDownloadURLFunc: func(trackURL string, format string) (string, error) {
-			// Should prefer progressive format even when HLS is listed first
-			assert.Equal(t, "progressive", format)
-			return "https://cf-media.sndcdn.com/progressive.mp3?auth=params", nil
+			assert.Equal(t, "hls", format)
+			return "https://cf-media.sndcdn.com/playlist.m3u8?auth=params", nil
 		},
 	}
 
@@ -192,7 +229,8 @@ func TestRealStreamExtraction_PreferProgressiveOverHLS(t *testing.T) {
 	streamInfo, err := extractor.ExtractStreamURL(ctx, 555666777)
 
 	require.NoError(t, err)
-	assert.Equal(t, "progressive", streamInfo.Quality)
+	assert.Equal(t, "hls", streamInfo.Quality)
+	assert.Equal(t, "hls", streamInfo.Format)
 }
 
 func TestRealStreamExtraction_HandleAPIErrors(t *testing.T) {
@@ -231,7 +269,7 @@ func TestRealStreamExtraction_HandleAPIErrors(t *testing.T) {
 						return nil, tt.apiError
 					}
 					return []soundcloudapi.Track{{
-						ID: tt.trackID,
+						ID:           tt.trackID,
 						PermalinkURL: "https://soundcloud.com/test/track",
 						Media: soundcloudapi.Media{
 							Transcodings: []soundcloudapi.Transcoding{
@@ -264,7 +302,7 @@ func TestRealStreamExtraction_HandleAPIErrors(t *testing.T) {
 
 func TestRealStreamExtraction_HandleExpiredURLs(t *testing.T) {
 	mockTrack := soundcloudapi.Track{
-		ID: 111222333,
+		ID:           111222333,
 		PermalinkURL: "https://soundcloud.com/test/expired",
 		Media: soundcloudapi.Media{
 			Transcodings: []soundcloudapi.Transcoding{
@@ -316,7 +354,7 @@ func TestRealStreamExtraction_ContextCancellation(t *testing.T) {
 	}
 
 	extractor := audio.NewRealSoundCloudStreamExtractor(mockAPI)
-	
+
 	// Create context that cancels immediately
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -330,7 +368,7 @@ func TestRealStreamExtraction_ContextCancellation(t *testing.T) {
 
 func TestRealStreamExtraction_NoTranscodingsAvailable(t *testing.T) {
 	mockTrack := soundcloudapi.Track{
-		ID: 999888777,
+		ID:           999888777,
 		PermalinkURL: "https://soundcloud.com/test/no-transcodings",
 		Media: soundcloudapi.Media{
 			Transcodings: []soundcloudapi.Transcoding{}, // Empty transcodings
@@ -399,7 +437,7 @@ func TestRealStreamExtraction_URLValidation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			isValid, err := extractor.ValidateStreamURL(ctx, tt.url)
-			
+
 			require.NoError(t, err, "Validation should not return error for URL format checking")
 			assert.Equal(t, tt.shouldValid, isValid, tt.description)
 		})
@@ -408,7 +446,7 @@ func TestRealStreamExtraction_URLValidation(t *testing.T) {
 
 func TestRealStreamExtraction_QualitySelection(t *testing.T) {
 	mockTrack := soundcloudapi.Track{
-		ID: 123456789,
+		ID:           123456789,
 		PermalinkURL: "https://soundcloud.com/test/quality",
 		Media: soundcloudapi.Media{
 			Transcodings: []soundcloudapi.Transcoding{
@@ -442,9 +480,9 @@ func TestRealStreamExtraction_QualitySelection(t *testing.T) {
 			return []soundcloudapi.Track{mockTrack}, nil
 		},
 		GetDownloadURLFunc: func(trackURL string, format string) (string, error) {
-			// Should select progressive format for better audio player compatibility
-			assert.Equal(t, "progressive", format)
-			return "https://cf-media.sndcdn.com/quality.mp3?auth=params", nil
+			// Should select AAC HLS before Opus HLS or progressive MP3.
+			assert.Equal(t, "hls", format)
+			return "https://cf-media.sndcdn.com/quality.m3u8?auth=params", nil
 		},
 	}
 
@@ -456,9 +494,10 @@ func TestRealStreamExtraction_QualitySelection(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, qualities, "progressive")
 	assert.Contains(t, qualities, "hls")
-	
-	// Progressive should be preferred
+
+	// AAC HLS should be preferred for current SoundCloud streaming URLs.
 	streamInfo, err := extractor.ExtractStreamURL(ctx, 123456789)
 	require.NoError(t, err)
-	assert.Equal(t, "progressive", streamInfo.Quality)
+	assert.Equal(t, "hls", streamInfo.Quality)
+	assert.Equal(t, "hls", streamInfo.Format)
 }

@@ -423,7 +423,7 @@ func testAudioPlayback(client *soundcloud.Client, url string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	err = audioPlayer.Play(ctx, streamInfo.URL)
+	err = audioPlayer.PlayStream(ctx, streamInfo)
 	if err != nil {
 		return fmt.Errorf("failed to start playback: %w", err)
 	}

@@ -42,6 +42,9 @@ type Player interface {
 	// Play starts or resumes playback from a streaming URL
 	Play(ctx context.Context, streamURL string) error
 
+	// PlayStream starts playback from extracted stream metadata.
+	PlayStream(ctx context.Context, streamInfo *StreamInfo) error
+
 	// Pause pauses the current playback
 	Pause() error
 
@@ -118,6 +121,16 @@ func WithAudioSink(s AudioSink) BeepOption {
 	}
 }
 
+// WithHLSDecoder injects the HLS decoder used for AAC/HLS streams. Tests use
+// this seam to avoid spawning ffmpeg.
+func WithHLSDecoder(d HLSDecoder) BeepOption {
+	return func(p *BeepPlayer) {
+		if d != nil {
+			p.hlsDecoder = d
+		}
+	}
+}
+
 // BeepPlayer implements Player using the Beep audio library
 type BeepPlayer struct {
 	mu     sync.RWMutex
@@ -138,6 +151,7 @@ type BeepPlayer struct {
 	// Stream information
 	streamURL  string
 	httpClient *http.Client
+	hlsDecoder HLSDecoder
 }
 
 // NewBeepPlayer creates a new Beep-based audio player. By default it uses the
@@ -157,6 +171,7 @@ func NewBeepPlayer(opts ...BeepOption) *BeepPlayer {
 				MaxConnsPerHost:    5,
 			},
 		},
+		hlsDecoder: NewFFmpegHLSDecoder(),
 	}
 	for _, opt := range opts {
 		opt(p)
@@ -177,10 +192,19 @@ func NewAdvancedBufferedPlayer() Player {
 
 // Play starts or resumes playback from a streaming URL
 func (p *BeepPlayer) Play(ctx context.Context, streamURL string) error {
+	return p.PlayStream(ctx, &StreamInfo{URL: streamURL})
+}
+
+// PlayStream starts or resumes playback from extracted stream metadata.
+func (p *BeepPlayer) PlayStream(ctx context.Context, streamInfo *StreamInfo) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	// Validate input
+	if streamInfo == nil {
+		return fmt.Errorf("stream info cannot be nil")
+	}
+	streamURL := streamInfo.URL
 	if streamURL == "" {
 		return fmt.Errorf("stream URL cannot be empty")
 	}
@@ -198,7 +222,7 @@ func (p *BeepPlayer) Play(ctx context.Context, streamURL string) error {
 	}
 
 	// Download and decode audio stream with retry logic
-	streamer, format, err := p.loadAudioStreamWithRetry(ctx, streamURL)
+	streamer, format, err := p.loadAudioStreamWithRetry(ctx, streamInfo)
 	if err != nil {
 		return fmt.Errorf("failed to load audio stream: %w", err)
 	}
@@ -434,7 +458,7 @@ func (p *BeepPlayer) getDurationLocked() time.Duration {
 }
 
 // loadAudioStreamWithRetry downloads and decodes an audio stream with retry logic
-func (p *BeepPlayer) loadAudioStreamWithRetry(ctx context.Context, streamURL string) (beep.StreamSeekCloser, beep.Format, error) {
+func (p *BeepPlayer) loadAudioStreamWithRetry(ctx context.Context, streamInfo *StreamInfo) (beep.StreamSeekCloser, beep.Format, error) {
 	maxRetries := 3
 	backoffDuration := 2 * time.Second
 
@@ -449,7 +473,7 @@ func (p *BeepPlayer) loadAudioStreamWithRetry(ctx context.Context, streamURL str
 			}
 		}
 
-		streamer, format, err := p.loadAudioStream(ctx, streamURL)
+		streamer, format, err := p.loadAudioStream(ctx, streamInfo)
 		if err == nil {
 			return streamer, format, nil
 		}
@@ -466,7 +490,16 @@ func (p *BeepPlayer) loadAudioStreamWithRetry(ctx context.Context, streamURL str
 }
 
 // loadAudioStream downloads and decodes an audio stream from URL
-func (p *BeepPlayer) loadAudioStream(ctx context.Context, streamURL string) (beep.StreamSeekCloser, beep.Format, error) {
+func (p *BeepPlayer) loadAudioStream(ctx context.Context, streamInfo *StreamInfo) (beep.StreamSeekCloser, beep.Format, error) {
+	streamURL := streamInfo.URL
+	if isHLSStream(streamInfo.Format, streamURL) {
+		decoder := p.hlsDecoder
+		if decoder == nil {
+			decoder = NewFFmpegHLSDecoder()
+		}
+		return decoder.Decode(ctx, streamURL)
+	}
+
 	// Create HTTP request
 	req, err := http.NewRequestWithContext(ctx, "GET", streamURL, nil)
 	if err != nil {

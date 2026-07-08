@@ -215,6 +215,33 @@ func TestPlayerComponent_StreamInfoHandling(t *testing.T) {
 	assert.NotNil(t, cmd) // Should return play command
 }
 
+func TestPlayerComponent_PlayCommandPreservesStreamInfoFormat(t *testing.T) {
+	mockPlayer := &MockAudioPlayer{}
+	component := player.NewPlayerComponent(mockPlayer, nil)
+
+	streamInfo := &audio.StreamInfo{
+		URL:      "https://example.com/playlist.m3u8",
+		Format:   "hls",
+		Quality:  "hls",
+		Duration: 240000,
+	}
+
+	component.SetState(player.StateLoading)
+	updatedComponent, cmd := component.Update(player.StreamInfoMsg{StreamInfo: streamInfo})
+	component = updatedComponent.(*player.PlayerComponent)
+	require.NotNil(t, cmd)
+
+	msg := cmd()
+	_, ok := msg.(player.ProgressUpdateMsg)
+	require.True(t, ok)
+	assert.Equal(t, player.StateLoading, component.GetState())
+	assert.Equal(t, 1, mockPlayer.playStreamCalls)
+	assert.Equal(t, 0, mockPlayer.playCalls)
+	require.NotNil(t, mockPlayer.lastStreamInfo)
+	assert.Equal(t, "hls", mockPlayer.lastStreamInfo.Format)
+	assert.Equal(t, "https://example.com/playlist.m3u8", mockPlayer.lastStreamInfo.URL)
+}
+
 func TestPlayerComponent_ErrorHandling(t *testing.T) {
 	mockPlayer := &MockAudioPlayer{}
 	component := player.NewPlayerComponent(mockPlayer, nil)
