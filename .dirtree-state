@@ -11,5 +11,6 @@ annotate=[
 	internal/audio/timeouts.go = Shared playback and stream-start timeout constants.
 	internal/soundcloud/client.go = SoundCloud api-v2 client for auth, library playlists/favorites, playlist hydration, and media URL resolution
 	internal/soundcloud/client_test.go = fixture tests for playlists, favorites, large playlist hydration, and transcoding media URL resolution
+	internal/soundcloud/live_debug_test.go = Env-gated live SoundCloud transcoding metadata debug probe with URL/key redaction.
 	tests/unit/audio/ffmpeg_hls_decoder_test.go = tests ffmpeg HLS command construction, PCM output, and URL-redacted errors
 ]

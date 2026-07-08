@@ -157,6 +157,7 @@ go test -cover ./...
 - **Beep Library**: High-performance audio playback with seekable streamers
 - **AAC/HLS Decoding**: Current SoundCloud HLS streams decode through ffmpeg into in-memory stereo PCM
 - **Progressive Fallback**: Older MP3/WAV URLs still use the direct HTTP decoder path
+- **DRM Detection**: Major-label SoundCloud+ tracks that only expose FairPlay/Widevine/PlayReady HLS are reported as unsupported instead of surfacing a misleading media 404
 - **Real-time Position Tracking**: 250ms update intervals for smooth progress
 - **Thread-safe Player**: Concurrent-safe with proper mutex locking
 
@@ -238,6 +239,7 @@ Please ensure all changes include appropriate tests and documentation.
 ### Runtime Issues
 - **TUI not displaying**: Ensure terminal supports 256 colors
 - **Track not playing**: Check internet connection and SoundCloud availability
+- **SoundCloud+ catalog track not playing**: If SoundCloud only advertises DRM-encrypted `cbc-encrypted-hls` / `ctr-encrypted-hls` streams, sctui will report that explicitly. Use `SCTUI_LIVE_DEBUG=1 SCTUI_LIVE_DEBUG_TRACK_URL="<url>" nix develop -c go test ./internal/soundcloud -run TestLiveDebugTrackTranscodings -v` to inspect redacted live transcoding metadata.
 - **Controls not responding**: Try different terminal emulator or update to latest version
 
 For more help, check the [troubleshooting guide](notes/troubleshooting.md) or open an issue.

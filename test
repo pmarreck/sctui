@@ -7,4 +7,4 @@ cd "$(dirname "$0")" || exit 1
 
 system="$(nix eval --raw --impure --expr builtins.currentSystem)"
 echo "Running test suite via nix (checks.${system}.test)..." >&2
-nix build ".#checks.${system}.test" --print-build-logs "$@"
+nix build --max-jobs auto --cores 0 ".#checks.${system}.test" --print-build-logs "$@"

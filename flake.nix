@@ -26,6 +26,15 @@
         # inputs. These lists are empty on non-Linux.
         audioNativeInputs = lib.optionals stdenv.isLinux [ pkgs.pkg-config ];
         audioBuildInputs = lib.optionals stdenv.isLinux [ pkgs.alsa-lib ];
+        goParallelism = ''
+          cores="''${NIX_BUILD_CORES:-1}"
+          if [ -z "$cores" ] || [ "$cores" = "0" ]; then
+            cores="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1)"
+          fi
+          export GOMAXPROCS="$cores"
+          export GOFLAGS="''${GOFLAGS:-} -p=$cores"
+          echo "Using $cores Go build/test workers"
+        '';
 
         sctui = pkgs.buildGoModule {
           pname = "sctui";
@@ -44,6 +53,8 @@
 
           nativeBuildInputs = audioNativeInputs ++ [ pkgs.makeWrapper ];
           buildInputs = audioBuildInputs;
+
+          preBuild = goParallelism;
 
           # sctui shells out to `sqlite3` for browser cookies and `ffmpeg` for
           # SoundCloud AAC/HLS decoding; put both on PATH for installed runs.
@@ -98,6 +109,7 @@
             buildPhase = ''
               runHook preBuild
               export HOME="$TMPDIR"
+              ${goParallelism}
               echo "── go test ./... ──"
               go test ./...
               runHook postBuild

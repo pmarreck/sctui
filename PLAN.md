@@ -1,6 +1,35 @@
 # Implementation Plan for Open-Source SoundCloud TUI Client in Go
 
-## Current Work: Interruptible Playback + Timeout Alignment (2026-07-08 EDT)
+## Current Work: SoundCloud+ DRM Stream Detection (2026-07-08 EDT)
+
+Goal: stop reporting misleading transcoding 404s for major-label SoundCloud+
+tracks that only expose DRM-protected HLS streams.
+
+Done criteria:
+- [x] Live debug metadata for a SoundCloud track is available behind
+  `SCTUI_LIVE_DEBUG=1`, with signed/media URLs redacted.
+  Completed 2026-07-08 17:53 EDT.
+- [x] Plain HLS/progressive candidates that 404 are tried in order instead of
+  failing on the first missing transcoding.
+  Completed 2026-07-08 17:53 EDT.
+- [x] If only DRM-encrypted cbc/ctr HLS variants are available, the player reports
+  an explicit unsupported encrypted SoundCloud+ stream error.
+  Completed 2026-07-08 17:53 EDT.
+- [x] `./test` and `./build` pass before commit.
+  Completed 2026-07-08 17:57 EDT.
+
+Next small behaviors:
+- [x] DRM catalog behavior: reproduce the New Lands shape with a fixture where
+  DRM transcodings resolve but plain HLS/progressive return 404.
+  Curiosity poke: can a subscribed track be playable in the browser but expose
+  only FairPlay/Widevine/PlayReady streams to non-browser clients?
+  Completed 2026-07-08 17:53 EDT.
+- [x] Debug behavior: retain an env-gated live transcoding probe while redacting
+  signed query strings and key attributes.
+  Curiosity poke: can debug logs leak signed CDN URLs or DRM init data?
+  Completed 2026-07-08 17:53 EDT.
+
+## Previous Work: Interruptible Playback + Timeout Alignment (2026-07-08 EDT)
 
 Goal: make selecting a second track interrupt current playback before SoundCloud
 stream resolution, preserve private playlist context through playback, and remove

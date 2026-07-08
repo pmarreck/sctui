@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -254,6 +255,71 @@ func TestRealStreamExtraction_UsesSecretPermalinkWhenNoPlaylistContext(t *testin
 	require.NoError(t, err)
 	assert.Equal(t, "https://cf-media.sndcdn.com/secret-favorite.m3u8?Policy=signed", streamInfo.URL)
 	assert.Equal(t, "hls", streamInfo.Format)
+}
+
+func TestRealStreamExtraction_ReportsUnsupportedEncryptedSubscriberStream(t *testing.T) {
+	mockTrack := soundcloudapi.Track{
+		ID:                254586552,
+		Title:             "New Lands",
+		DurationMS:        254000,
+		PermalinkURL:      "https://soundcloud.com/justice-official/new-lands",
+		MonetizationModel: "AD_SUPPORTED",
+		Media: soundcloudapi.Media{
+			Transcodings: []soundcloudapi.Transcoding{
+				{
+					URL:    "https://api-v2.soundcloud.com/media/soundcloud:tracks:254586552/encrypted-aac/stream/cbc-encrypted-hls",
+					Preset: "aac_256k",
+					Format: soundcloudapi.TranscodingFormat{
+						Protocol: "cbc-encrypted-hls",
+						MimeType: "audio/mp4; codecs=\"mp4a.40.2\"",
+					},
+				},
+				{
+					URL:    "https://api-v2.soundcloud.com/media/soundcloud:tracks:254586552/plain-aac/stream/hls",
+					Preset: "aac_hq",
+					Format: soundcloudapi.TranscodingFormat{
+						Protocol: "hls",
+						MimeType: "audio/mp4; codecs=\"mp4a.40.2\"",
+					},
+				},
+				{
+					URL:    "https://api-v2.soundcloud.com/media/soundcloud:tracks:254586552/plain-mp3/stream/progressive",
+					Preset: "mp3_0_0",
+					Format: soundcloudapi.TranscodingFormat{
+						Protocol: "progressive",
+						MimeType: "audio/mpeg",
+					},
+				},
+			},
+		},
+	}
+	var resolved []string
+	mockAPI := &directTranscodingMockAPI{
+		MockRealSoundCloudAPI: &MockRealSoundCloudAPI{
+			GetTrackInfoFunc: func(options soundcloudapi.GetTrackInfoOptions) ([]soundcloudapi.Track, error) {
+				assert.Equal(t, []int64{int64(254586552)}, options.ID)
+				return []soundcloudapi.Track{mockTrack}, nil
+			},
+		},
+		GetTranscodingURLFunc: func(ctx context.Context, transcodingURL string) (string, error) {
+			resolved = append(resolved, transcodingURL)
+			if strings.Contains(transcodingURL, "encrypted") {
+				return "https://playback.media-streaming.soundcloud.cloud/cbcs/playlist.m3u8?Policy=signed", nil
+			}
+			return "", fmt.Errorf("transcoding media request: HTTP 404: {}")
+		},
+	}
+
+	extractor := audio.NewRealSoundCloudStreamExtractor(mockAPI)
+	streamInfo, err := extractor.ExtractStreamURL(context.Background(), 254586552)
+
+	require.Error(t, err)
+	assert.Nil(t, streamInfo)
+	assert.Contains(t, err.Error(), "encrypted SoundCloud+ stream unsupported")
+	assert.Equal(t, []string{
+		"https://api-v2.soundcloud.com/media/soundcloud:tracks:254586552/plain-aac/stream/hls",
+		"https://api-v2.soundcloud.com/media/soundcloud:tracks:254586552/plain-mp3/stream/progressive",
+	}, resolved)
 }
 
 func TestRealStreamExtraction_FallbackToHLSWhenNoProgressive(t *testing.T) {

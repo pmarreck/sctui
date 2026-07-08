@@ -183,33 +183,44 @@ func (e *RealSoundCloudStreamExtractor) ExtractTrackStreamURL(ctx context.Contex
 		return nil, fmt.Errorf("no transcodings available for track %d", req.TrackID)
 	}
 
-	preferredFormat, selectedTranscoding := chooseSoundCloudTranscoding(track.Media.Transcodings)
-	if selectedTranscoding == nil {
+	candidates := chooseSoundCloudTranscodingCandidates(track.Media.Transcodings)
+	if len(candidates) == 0 {
+		if hasDRMEncryptedTranscoding(track.Media.Transcodings) {
+			return nil, encryptedSoundCloudPlusError(req.TrackID)
+		}
 		return nil, fmt.Errorf("no supported transcoding formats available for track %d", req.TrackID)
 	}
 
-	// Determine format from transcoding
-	format := "mp3" // Default
-	if strings.EqualFold(selectedTranscoding.Format.Protocol, "hls") {
-		format = "hls"
-	} else if strings.EqualFold(selectedTranscoding.Format.MimeType, "audio/ogg") {
-		format = "ogg"
+	var lastErr error
+	for _, candidate := range candidates {
+		streamURL, err := e.resolveSelectedTranscoding(ctx, track.PermalinkURL, candidate.quality, candidate.transcoding.URL)
+		if err != nil {
+			lastErr = err
+			if ctx.Err() != nil {
+				return nil, err
+			}
+			if isTranscodingNotFound(err) {
+				continue
+			}
+			return nil, err
+		}
+
+		streamInfo := &StreamInfo{
+			URL:      streamURL,
+			Format:   streamFormat(candidate.transcoding),
+			Quality:  candidate.quality,
+			Duration: track.DurationMS,
+		}
+		return streamInfo, nil
 	}
 
-	streamURL, err := e.resolveSelectedTranscoding(ctx, track.PermalinkURL, preferredFormat, selectedTranscoding.URL)
-	if err != nil {
-		return nil, err
+	if hasDRMEncryptedTranscoding(track.Media.Transcodings) {
+		return nil, encryptedSoundCloudPlusError(req.TrackID)
 	}
-
-	// Create StreamInfo
-	streamInfo := &StreamInfo{
-		URL:      streamURL,
-		Format:   format,
-		Quality:  preferredFormat,
-		Duration: track.DurationMS,
+	if lastErr != nil {
+		return nil, lastErr
 	}
-
-	return streamInfo, nil
+	return nil, fmt.Errorf("no playable transcoding formats available for track %d", req.TrackID)
 }
 
 // trackInfoOptionsForStreamRequest chooses the SoundCloud metadata lookup that
@@ -261,29 +272,90 @@ func (e *RealSoundCloudStreamExtractor) resolveSelectedTranscoding(ctx context.C
 	return streamURL, nil
 }
 
-// chooseSoundCloudTranscoding prefers the post-progressive-deprecation HLS
-// protocol, biasing non-Opus HLS when metadata lets us identify it.
-func chooseSoundCloudTranscoding(transcodings []soundcloudapi.Transcoding) (string, *soundcloudapi.Transcoding) {
+type soundCloudTranscodingCandidate struct {
+	quality     string
+	transcoding *soundcloudapi.Transcoding
+}
+
+// chooseSoundCloudTranscodingCandidates orders playable stream candidates while
+// excluding SoundCloud's DRM-only cbc/ctr encrypted HLS variants.
+func chooseSoundCloudTranscodingCandidates(transcodings []soundcloudapi.Transcoding) []soundCloudTranscodingCandidate {
+	var candidates []soundCloudTranscodingCandidate
 	for i := range transcodings {
 		transcoding := transcodings[i]
-		if strings.EqualFold(transcoding.Format.Protocol, "hls") &&
+		if isSupportedHLSProtocol(transcoding) &&
 			!strings.Contains(strings.ToLower(transcoding.Format.MimeType), "ogg") {
-			return "hls", &transcoding
+			candidates = append(candidates, soundCloudTranscodingCandidate{quality: "hls", transcoding: &transcodings[i]})
 		}
 	}
 	for i := range transcodings {
 		transcoding := transcodings[i]
-		if strings.EqualFold(transcoding.Format.Protocol, "hls") {
-			return "hls", &transcoding
+		if isSupportedHLSProtocol(transcoding) &&
+			strings.Contains(strings.ToLower(transcoding.Format.MimeType), "ogg") {
+			candidates = append(candidates, soundCloudTranscodingCandidate{quality: "hls", transcoding: &transcodings[i]})
 		}
 	}
 	for i := range transcodings {
 		transcoding := transcodings[i]
 		if strings.EqualFold(transcoding.Format.Protocol, "progressive") {
-			return "progressive", &transcoding
+			candidates = append(candidates, soundCloudTranscodingCandidate{quality: "progressive", transcoding: &transcodings[i]})
 		}
 	}
-	return "", nil
+	return candidates
+}
+
+// chooseSoundCloudTranscoding preserves the old single-candidate test seam while
+// delegating to the ordered candidate list used by production extraction.
+func chooseSoundCloudTranscoding(transcodings []soundcloudapi.Transcoding) (string, *soundcloudapi.Transcoding) {
+	candidates := chooseSoundCloudTranscodingCandidates(transcodings)
+	if len(candidates) == 0 {
+		return "", nil
+	}
+	return candidates[0].quality, candidates[0].transcoding
+}
+
+func isSupportedHLSProtocol(transcoding soundcloudapi.Transcoding) bool {
+	protocol := strings.ToLower(transcoding.Format.Protocol)
+	if protocol == "hls" || protocol == "encrypted-hls" {
+		return true
+	}
+	return strings.Contains(strings.ToLower(transcoding.URL), "/encrypted-hls") &&
+		!isDRMEncryptedHLSProtocol(protocol)
+}
+
+func isDRMEncryptedHLSProtocol(protocol string) bool {
+	protocol = strings.ToLower(protocol)
+	return strings.HasPrefix(protocol, "cbc-") || strings.HasPrefix(protocol, "ctr-")
+}
+
+func hasDRMEncryptedTranscoding(transcodings []soundcloudapi.Transcoding) bool {
+	for _, transcoding := range transcodings {
+		if isDRMEncryptedHLSProtocol(transcoding.Format.Protocol) {
+			return true
+		}
+	}
+	return false
+}
+
+func streamFormat(transcoding *soundcloudapi.Transcoding) string {
+	if transcoding == nil {
+		return "mp3"
+	}
+	if isSupportedHLSProtocol(*transcoding) {
+		return "hls"
+	}
+	if strings.EqualFold(transcoding.Format.MimeType, "audio/ogg") {
+		return "ogg"
+	}
+	return "mp3"
+}
+
+func isTranscodingNotFound(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "HTTP 404")
+}
+
+func encryptedSoundCloudPlusError(trackID int64) error {
+	return fmt.Errorf("encrypted SoundCloud+ stream unsupported for track %d: SoundCloud returned only DRM-protected cbc/ctr encrypted HLS variants", trackID)
 }
 
 // GetAvailableQualities returns available qualities for track using real API
