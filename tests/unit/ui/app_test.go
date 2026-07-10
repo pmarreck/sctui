@@ -108,17 +108,15 @@ func TestApp_Navigation(t *testing.T) {
 }
 
 func TestApp_QuitHandling(t *testing.T) {
-	application := app.NewApp()
+	for _, key := range []tea.KeyType{tea.KeyCtrlC, tea.KeyCtrlQ} {
+		application := app.NewApp()
+		assert.Contains(t, application.View(), "Ctrl+C/Ctrl+Q: Quit")
+		updatedApp, cmd := application.Update(tea.KeyMsg{Type: key})
 
-	// Test Ctrl+C quits
-	quitMsg := tea.KeyMsg{Type: tea.KeyCtrlC}
-	updatedApp, cmd := application.Update(quitMsg)
-
-	newApp := updatedApp.(*app.App)
-	assert.True(t, newApp.IsQuitting())
-
-	// Should return quit command
-	assert.NotNil(t, cmd)
+		newApp := updatedApp.(*app.App)
+		assert.True(t, newApp.IsQuitting(), key.String())
+		assert.NotNil(t, cmd, key.String())
+	}
 }
 
 func TestApp_WindowSizeHandling(t *testing.T) {

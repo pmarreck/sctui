@@ -107,7 +107,7 @@ Launches the full interactive Terminal UI with audio playback capabilities.
   - Click a playlist or track to select it
   - Double-click a playlist to open it, or a track to play it
   - Scroll to move the active playlist or track selection
-- **Ctrl+C**: Quit application
+- **Ctrl+C/Ctrl+Q**: Quit application
 
 ## Development
 

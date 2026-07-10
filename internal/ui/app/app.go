@@ -248,7 +248,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		// Global key handling
 		switch msg.Type {
-		case tea.KeyCtrlC:
+		case tea.KeyCtrlC, tea.KeyCtrlQ:
 			a.quitting = true
 			return a, tea.Quit
 
@@ -514,7 +514,7 @@ func (a *App) renderHeader() string {
 
 // renderFooter renders the application footer
 func (a *App) renderFooter() string {
-	helpText := "Tab: Next View • Shift+Tab: Previous View • Ctrl+C: Quit"
+	helpText := "Tab: Next View • Shift+Tab: Previous View • Ctrl+C/Ctrl+Q: Quit"
 
 	// Add global audio controls (work from any view)
 	if a.playerComponent.GetCurrentTrack() != nil {
