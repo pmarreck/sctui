@@ -1,14 +1,52 @@
 # Implementation Plan for Open-Source SoundCloud TUI Client in Go
 
-## Current Work: Collection Playback and Reliable Skipping (2026-07-10 EDT)
+## Current Work: Visible Unplayable-Track Skips (2026-07-10 EDT)
 
-Goal: make repeated forward skips reliable, continue through the active
+Goal: make automatic playlist/Favorites skipping visible and explain why a
+track was skipped, without delaying the TUI event loop.
+
+Done criteria:
+- [x] A failed collection track immediately moves the visible selection to the
+  next candidate, then waits 500ms before playback begins.
+- [x] The footer retains a concise skipped-track reason while the next candidate
+  loads or plays.
+- [x] Repeated failures continue this visible sequence until a track starts or
+  the collection is exhausted.
+- [x] `./test` and `./build` pass before commit.
+  Completed 2026-07-10 10:07 EDT.
+
+Next small behavior:
+- [x] Delayed retry: use a Bubble Tea message with an identity check, not a
+  blocking sleep, so a stale retry cannot override a newer user choice.
+  Curiosity poke: can a manual selection during the half-second delay start an
+  obsolete queued track?
+
+## Current Work: Mouse Wheel Selection (2026-07-10 EDT)
+
+Goal: restore wheel-based list navigation after mouse click handling began
+consuming all Bubble Tea mouse messages.
+
+Done criteria:
+- [x] Mouse wheel up/down changes the selected playlist, playlist track, or
+  favorite track without triggering playback.
+- [x] `./test` and `./build` pass before commit.
+  Completed 2026-07-10 10:02 EDT.
+
+Next small behavior:
+- [x] Wheel routing: translate Bubble Tea wheel events into the existing arrow
+  navigation handlers rather than maintaining a duplicate selection path.
+  Curiosity poke: can wheel events accidentally register as double-clicks or
+  trigger playback?
+
+## Previous Work: Collection Playback and Reliable Seeking (2026-07-10 EDT)
+
+Goal: make repeated seeks reliable, continue through the active
 playlist or Favorites collection after a track completes or cannot be played,
 and make the library usable with mouse or long collections.
 
 Done criteria:
-- [x] Repeated forward skips advance through the active collection without
-  reusing a stale playback position or stream request.
+- [x] Repeated forward seeks use the latest requested position; Shift+←/→
+  manually selects the previous/next collection track without replacing seek.
 - [x] Playlist/Favorites playback retains an ordered collection context and
   advances automatically when a track completes.
 - [x] Playback failures, including unavailable/DRM tracks, automatically try
@@ -25,8 +63,9 @@ Next small behaviors:
   source ordering after navigating away from the library view.
   Curiosity poke: can returning from a playlist list erase the context of a
   currently playing private playlist?
-- [x] Skip behavior: repeated right-arrow presses target successive tracks and
-  stale asynchronous stream results cannot overwrite the newest choice.
+- [x] Seek/skip behavior: repeated right-arrow seeks advance the requested
+  position, while Shift+←/→ selects collection tracks and stale asynchronous
+  stream results cannot overwrite the newest choice.
   Curiosity poke: can a slow first stream-resolution command begin playback
   after two faster skips?
 - [x] Auto-advance behavior: completion and playback failures select the next

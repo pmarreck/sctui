@@ -374,7 +374,7 @@ func TestApp_FavoritesTabLoadsAndPlaysTrack(t *testing.T) {
 	assert.Equal(t, "Favorite Track", application.GetCurrentTrack().Title)
 }
 
-func TestApp_CollectionPlaybackSkipsForwardAndSkipsUnavailableTracks(t *testing.T) {
+func TestApp_CollectionPlaybackUsesShiftArrowsAndSkipsUnavailableTracks(t *testing.T) {
 	tracks := []soundcloud.Track{
 		{ID: 1, Title: "First", User: soundcloud.User{Username: "Artist"}},
 		{ID: 2, Title: "Unavailable", User: soundcloud.User{Username: "Artist"}},
@@ -401,11 +401,17 @@ func TestApp_CollectionPlaybackSkipsForwardAndSkipsUnavailableTracks(t *testing.
 	application = updated.(*app.App)
 	require.NotNil(t, cmd)
 	assert.Equal(t, "First", application.GetCurrentTrack().Title)
-	assert.Contains(t, application.View(), "←→: Previous/Next Track")
+	assert.Contains(t, application.View(), "←→: Seek")
+	assert.Contains(t, application.View(), "Shift+←→: Previous/Next Track")
 
-	// The next key must advance immediately, even before the first asynchronous
-	// stream request has returned.
+	// Plain arrows retain their seek behavior even while a collection is active.
 	updated, cmd = application.Update(tea.KeyMsg{Type: tea.KeyRight})
+	application = updated.(*app.App)
+	require.NotNil(t, cmd)
+	assert.Equal(t, "First", application.GetCurrentTrack().Title)
+
+	// Shift+Right advances the collection before the first async request returns.
+	updated, cmd = application.Update(tea.KeyMsg{Type: tea.KeyShiftRight})
 	application = updated.(*app.App)
 	require.NotNil(t, cmd)
 	assert.Equal(t, "Unavailable", application.GetCurrentTrack().Title)
@@ -414,6 +420,13 @@ func TestApp_CollectionPlaybackSkipsForwardAndSkipsUnavailableTracks(t *testing.
 		Track: application.GetCurrentTrack(),
 		Error: fmt.Errorf("HTTP 404"),
 	})
+	application = updated.(*app.App)
+	require.NotNil(t, cmd)
+	assert.Equal(t, "Unavailable", application.GetCurrentTrack().Title)
+	assert.Contains(t, application.View(), "▶ Playable")
+	assert.Contains(t, application.View(), "Skipped Unavailable: HTTP 404")
+
+	updated, cmd = application.Update(app.CollectionAdvanceMsg{TrackID: 3})
 	application = updated.(*app.App)
 	require.NotNil(t, cmd)
 	assert.Equal(t, "Playable", application.GetCurrentTrack().Title)
@@ -519,6 +532,56 @@ func TestApp_MouseClicksTabsAndDoubleClicksLibraryItems(t *testing.T) {
 	assert.Equal(t, "Second", application.GetCurrentTrack().Title)
 }
 
+func TestApp_MouseWheelNavigatesFavoritesAndPlaylistTracks(t *testing.T) {
+	tracks := []soundcloud.Track{
+		{ID: 1, Title: "First", User: soundcloud.User{Username: "Artist"}},
+		{ID: 2, Title: "Second", User: soundcloud.User{Username: "Artist"}},
+	}
+	application := app.NewAppWithDependencies(
+		&MockSoundCloudClient{
+			LibraryFunc: func() ([]soundcloud.Playlist, error) {
+				return []soundcloud.Playlist{{ID: 10, Title: "Playlist"}}, nil
+			},
+			PlaylistFunc: func(playlistID int64) ([]soundcloud.Track, error) {
+				return tracks, nil
+			},
+			FavoritesFunc: func() ([]soundcloud.Track, error) {
+				return tracks, nil
+			},
+		},
+		&MockAudioPlayer{},
+		&MockStreamExtractor{},
+	)
+
+	updated, cmd := application.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	application = updated.(*app.App)
+	require.NotNil(t, cmd)
+	updated, _ = application.Update(cmd())
+	application = updated.(*app.App)
+	updated, _ = application.Update(wheelDown())
+	application = updated.(*app.App)
+	assert.Contains(t, application.View(), "▶ Second")
+
+	updated, _ = application.Update(tea.KeyMsg{Type: tea.KeyTab})
+	application = updated.(*app.App)
+	updated, _ = application.Update(tea.KeyMsg{Type: tea.KeyTab})
+	application = updated.(*app.App)
+	updated, cmd = application.Update(tea.KeyMsg{Type: tea.KeyTab})
+	application = updated.(*app.App)
+	require.NotNil(t, cmd)
+	updated, _ = application.Update(cmd())
+	application = updated.(*app.App)
+	updated, cmd = application.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	application = updated.(*app.App)
+	require.NotNil(t, cmd)
+	updated, _ = application.Update(cmd())
+	application = updated.(*app.App)
+	updated, _ = application.Update(wheelDown())
+	application = updated.(*app.App)
+	assert.Contains(t, application.View(), "▶ Second")
+	assert.Nil(t, application.GetCurrentTrack())
+}
+
 func TestApp_LongContentFitsBelowHeaderAndAboveFooter(t *testing.T) {
 	tracks := make([]soundcloud.Track, 40)
 	for i := range tracks {
@@ -551,6 +614,10 @@ func TestApp_LongContentFitsBelowHeaderAndAboveFooter(t *testing.T) {
 
 func mousePress(x, y int) tea.MouseMsg {
 	return tea.MouseMsg{X: x, Y: y, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress}
+}
+
+func wheelDown() tea.MouseMsg {
+	return tea.MouseMsg{Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress}
 }
 
 func TestApp_ErrorHandling(t *testing.T) {

@@ -94,10 +94,27 @@ const (
 
 const mouseDoubleClickWindow = 400 * time.Millisecond
 
+const autoAdvanceDelay = 500 * time.Millisecond
+
 type mouseClick struct {
 	target libraryMouseTarget
 	index  int
 	at     time.Time
+}
+
+type playbackCollectionSource int
+
+const (
+	collectionSourceNone playbackCollectionSource = iota
+	collectionSourcePlaylist
+	collectionSourceFavorites
+)
+
+// CollectionAdvanceMsg starts a delayed retry after the visible collection
+// selection has advanced past an unplayable track.
+type CollectionAdvanceMsg struct {
+	TrackID    int64
+	Generation uint64
 }
 
 // App represents the main application model
@@ -140,8 +157,11 @@ type App struct {
 
 	// Collection playback survives leaving its source view, allowing next/previous
 	// and auto-advance to follow the selected playlist or favorites ordering.
-	playbackCollection      []soundcloud.Track
-	playbackCollectionIndex int
+	playbackCollection       []soundcloud.Track
+	playbackCollectionIndex  int
+	playbackCollectionSource playbackCollectionSource
+	playbackNotice           string
+	playbackGeneration       uint64
 
 	now       func() time.Time
 	lastClick mouseClick
@@ -250,22 +270,6 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, tea.Batch(cmds...)
 
 		case tea.KeyLeft, tea.KeyRight:
-			if a.currentView == ViewPlaylists && a.playlistsMode == playlistModeList {
-				if cmd := a.handlePlaylistsKey(msg); cmd != nil {
-					cmds = append(cmds, cmd)
-				}
-				return a, tea.Batch(cmds...)
-			}
-			if a.hasPlaybackCollection() {
-				delta := 1
-				if msg.Type == tea.KeyLeft {
-					delta = -1
-				}
-				if cmd := a.skipCollectionTrack(delta); cmd != nil {
-					cmds = append(cmds, cmd)
-				}
-				return a, tea.Batch(cmds...)
-			}
 			if a.currentView == ViewPlaylists {
 				if cmd := a.handlePlaylistsKey(msg); cmd != nil {
 					cmds = append(cmds, cmd)
@@ -273,11 +277,25 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a, tea.Batch(cmds...)
 			}
 
-			// Always pass seek keys to player component
+			// Always pass seek keys to player component.
 			updatedPlayer, playerCmd := a.playerComponent.Update(msg)
 			a.playerComponent = updatedPlayer.(*player.PlayerComponent)
 			if playerCmd != nil {
 				cmds = append(cmds, playerCmd)
+			}
+			return a, tea.Batch(cmds...)
+
+		case tea.KeyShiftLeft, tea.KeyShiftRight:
+			if !a.hasPlaybackCollection() {
+				return a, nil
+			}
+			a.playbackGeneration++
+			delta := 1
+			if msg.Type == tea.KeyShiftLeft {
+				delta = -1
+			}
+			if cmd := a.skipCollectionTrack(delta); cmd != nil {
+				cmds = append(cmds, cmd)
 			}
 			return a, tea.Batch(cmds...)
 
@@ -393,13 +411,21 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Playback failed - reset search state and show error
 		a.searchComponent.ClearSelection()
 		a.searchComponent.ResetToResults()
-		if cmd := a.advanceAfterCollectionTrack(msg.Track); cmd != nil {
+		if cmd := a.advanceAfterCollectionFailure(msg.Track, msg.Error); cmd != nil {
 			return a, cmd
 		}
 		return a, nil
 
 	case player.PlaybackCompletedMsg:
-		return a, a.advanceAfterCollectionTrack(msg.Track)
+		return a, a.advanceAfterCollectionCompletion(msg.Track)
+
+	case CollectionAdvanceMsg:
+		if !a.hasPlaybackCollection() ||
+			(msg.Generation != 0 && msg.Generation != a.playbackGeneration) ||
+			a.playbackCollection[a.playbackCollectionIndex].ID != msg.TrackID {
+			return a, nil
+		}
+		return a, a.playCurrentCollectionTrack()
 
 	default:
 		// Pass other messages to components
@@ -494,7 +520,7 @@ func (a *App) renderFooter() string {
 	if a.playerComponent.GetCurrentTrack() != nil {
 		arrowControls := "←→: Seek"
 		if a.hasPlaybackCollection() {
-			arrowControls = "←→: Previous/Next Track"
+			arrowControls += " • Shift+←→: Previous/Next Track"
 		}
 		helpText += " • Space: Play/Pause • " + arrowControls + " • +/-: Volume"
 	}
@@ -512,7 +538,13 @@ func (a *App) renderFooter() string {
 		helpText += " • ↑↓: Navigate • Enter: Play"
 	}
 
-	return styles.FooterStyle.Render(helpText)
+	footerLines := []string{helpText}
+	if a.playbackNotice != "" {
+		footerLines = append([]string{
+			styles.ErrorStatusStyle.Render(styles.TruncateText(a.playbackNotice, a.width-4)),
+		}, footerLines...)
+	}
+	return styles.FooterStyle.Render(lipgloss.JoinVertical(lipgloss.Left, footerLines...))
 }
 
 func (a *App) activateCurrentView() tea.Cmd {
@@ -594,7 +626,7 @@ func (a *App) handlePlaylistsKey(msg tea.KeyMsg) tea.Cmd {
 			if len(a.playlistTracks) == 0 {
 				return nil
 			}
-			return a.playCollectionTrack(a.playlistTracks, a.playlistTrackIndex)
+			return a.playCollectionTrack(a.playlistTracks, a.playlistTrackIndex, collectionSourcePlaylist)
 		}
 		if len(a.playlists) == 0 {
 			return nil
@@ -635,7 +667,7 @@ func (a *App) handleFavoritesKey(msg tea.KeyMsg) tea.Cmd {
 		if len(a.favoriteTracks) == 0 {
 			return nil
 		}
-		return a.playCollectionTrack(a.favoriteTracks, a.favoriteSelectedIndex)
+		return a.playCollectionTrack(a.favoriteTracks, a.favoriteSelectedIndex, collectionSourceFavorites)
 	}
 	return nil
 }
@@ -648,12 +680,15 @@ func (a *App) playTrack(track *soundcloud.Track) tea.Cmd {
 
 // playCollectionTrack snapshots a playlist or Favorites ordering before
 // playback so navigation away from the library cannot lose auto-advance state.
-func (a *App) playCollectionTrack(tracks []soundcloud.Track, index int) tea.Cmd {
+func (a *App) playCollectionTrack(tracks []soundcloud.Track, index int, source playbackCollectionSource) tea.Cmd {
 	if len(tracks) == 0 {
 		return nil
 	}
 	a.playbackCollection = append([]soundcloud.Track(nil), tracks...)
-	a.playbackCollectionIndex = clampIndex(index, len(a.playbackCollection))
+	a.playbackCollectionSource = source
+	a.playbackNotice = ""
+	a.playbackGeneration++
+	a.setPlaybackCollectionIndex(index)
 	a.playerComponent.SetCollectionNavigation(true)
 	return a.playCurrentCollectionTrack()
 }
@@ -667,6 +702,9 @@ func (a *App) hasPlaybackCollection() bool {
 func (a *App) clearPlaybackCollection() {
 	a.playbackCollection = nil
 	a.playbackCollectionIndex = 0
+	a.playbackCollectionSource = collectionSourceNone
+	a.playbackNotice = ""
+	a.playbackGeneration++
 	a.playerComponent.SetCollectionNavigation(false)
 }
 
@@ -678,16 +716,44 @@ func (a *App) skipCollectionTrack(delta int) tea.Cmd {
 	if next < 0 || next >= len(a.playbackCollection) {
 		return nil
 	}
-	a.playbackCollectionIndex = next
+	a.setPlaybackCollectionIndex(next)
 	return a.playCurrentCollectionTrack()
 }
 
-func (a *App) advanceAfterCollectionTrack(track *soundcloud.Track) tea.Cmd {
+func (a *App) advanceAfterCollectionFailure(track *soundcloud.Track, err error) tea.Cmd {
+	if !a.hasPlaybackCollection() || track == nil ||
+		a.playbackCollection[a.playbackCollectionIndex].ID != track.ID {
+		return nil
+	}
+	next := a.playbackCollectionIndex + 1
+	if next >= len(a.playbackCollection) {
+		return nil
+	}
+	a.playbackNotice = fmt.Sprintf("Skipped %s: %v", track.Title, err)
+	a.setPlaybackCollectionIndex(next)
+	nextTrackID := a.playbackCollection[a.playbackCollectionIndex].ID
+	generation := a.playbackGeneration
+	return tea.Tick(autoAdvanceDelay, func(time.Time) tea.Msg {
+		return CollectionAdvanceMsg{TrackID: nextTrackID, Generation: generation}
+	})
+}
+
+func (a *App) advanceAfterCollectionCompletion(track *soundcloud.Track) tea.Cmd {
 	if !a.hasPlaybackCollection() || track == nil ||
 		a.playbackCollection[a.playbackCollectionIndex].ID != track.ID {
 		return nil
 	}
 	return a.skipCollectionTrack(1)
+}
+
+func (a *App) setPlaybackCollectionIndex(index int) {
+	a.playbackCollectionIndex = clampIndex(index, len(a.playbackCollection))
+	switch a.playbackCollectionSource {
+	case collectionSourcePlaylist:
+		a.playlistTrackIndex = clampIndex(a.playbackCollectionIndex, len(a.playlistTracks))
+	case collectionSourceFavorites:
+		a.favoriteSelectedIndex = clampIndex(a.playbackCollectionIndex, len(a.favoriteTracks))
+	}
 }
 
 func (a *App) playCurrentCollectionTrack() tea.Cmd {
@@ -884,6 +950,12 @@ func (a *App) renderLibraryContent(title string, items []string) string {
 }
 
 func (a *App) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	switch msg.Button {
+	case tea.MouseButtonWheelUp:
+		return a.handleMouseWheel(-1)
+	case tea.MouseButtonWheelDown:
+		return a.handleMouseWheel(1)
+	}
 	if msg.Action != tea.MouseActionPress || msg.Button != tea.MouseButtonLeft {
 		return a, nil
 	}
@@ -906,16 +978,37 @@ func (a *App) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		if index, ok := a.libraryItemAt(msg.Y, len(a.playlistTracks), a.playlistTrackIndex); ok {
 			a.playlistTrackIndex = index
 			if a.isDoubleClick(mouseTargetPlaylistTrack, index) {
-				return a, a.playCollectionTrack(a.playlistTracks, index)
+				return a, a.playCollectionTrack(a.playlistTracks, index, collectionSourcePlaylist)
 			}
 		}
 	case ViewFavorites:
 		if index, ok := a.libraryItemAt(msg.Y, len(a.favoriteTracks), a.favoriteSelectedIndex); ok {
 			a.favoriteSelectedIndex = index
 			if a.isDoubleClick(mouseTargetFavoriteTrack, index) {
-				return a, a.playCollectionTrack(a.favoriteTracks, index)
+				return a, a.playCollectionTrack(a.favoriteTracks, index, collectionSourceFavorites)
 			}
 		}
+	}
+	return a, nil
+}
+
+// handleMouseWheel reuses the keyboard navigation paths so wheel scrolling
+// moves the active selection without acquiring click/double-click semantics.
+func (a *App) handleMouseWheel(delta int) (tea.Model, tea.Cmd) {
+	key := tea.KeyDown
+	if delta < 0 {
+		key = tea.KeyUp
+	}
+	message := tea.KeyMsg{Type: key}
+	switch a.currentView {
+	case ViewSearch:
+		updatedSearch, cmd := a.searchComponent.Update(message)
+		a.searchComponent = updatedSearch.(*search.SearchComponent)
+		return a, cmd
+	case ViewPlaylists:
+		return a, a.handlePlaylistsKey(message)
+	case ViewFavorites:
+		return a, a.handleFavoritesKey(message)
 	}
 	return a, nil
 }

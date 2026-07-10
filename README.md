@@ -26,6 +26,7 @@ This application uses SoundCloud's undocumented internal API through a reverse-e
 - **Player controls** (play/pause, seek, volume)
 - **Silent Firefox session login** for personal/private SoundCloud library access
 - **Personal playlists and favorites tabs** with interactive track playback
+- **Visible collection recovery** that highlights skipped tracks' successors and shows the failure reason
 - **Progress tracking** with smooth progress bars
 - **Global hotkeys** (Space, ←→, +/-) work from any view
 - **Track completion** handling with replay functionality
@@ -34,7 +35,7 @@ This application uses SoundCloud's undocumented internal API through a reverse-e
 🎵 **TUI Navigation:**
 - **Tab/Shift+Tab**: Switch between Search/Player/Playlists/Favorites views
 - **Search View**: Enter to search, ↑↓ to navigate, Enter to select
-- **Player View**: Space (play/pause), ←→ (seek 10s for direct/search playback; previous/next track for playlists and Favorites), +/- (volume)
+- **Player View**: Space (play/pause), ←→ (seek 10s), Shift+←→ (previous/next track for playlists and Favorites), +/- (volume)
 - **Playlists View**: ↑↓ to navigate, →/Enter to open a playlist or play a track, ←/Esc to go back
 - **Favorites View**: ↑↓ to navigate liked tracks, Enter to play
 - **Global Controls**: Audio controls work from any view
@@ -98,12 +99,14 @@ Launches the full interactive Terminal UI with audio playback capabilities.
   - ↑↓ to navigate liked tracks, Enter to play
 - **Global Audio Controls** (work from any view):
   - **Space**: Play/Pause
-  - **←→**: Seek backward/forward (10 seconds) for direct/search playback; move to the previous/next track while playing a playlist or Favorites collection
+  - **←→**: Seek backward/forward (10 seconds)
+  - **Shift+←→**: Move to the previous/next track while playing a playlist or Favorites collection
   - **+/-**: Volume up/down
 - **Mouse**:
   - Click a tab to select it
   - Click a playlist or track to select it
   - Double-click a playlist to open it, or a track to play it
+  - Scroll to move the active playlist or track selection
 - **Ctrl+C**: Quit application
 
 ## Development

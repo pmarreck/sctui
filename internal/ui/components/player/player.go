@@ -770,7 +770,7 @@ func (p *PlayerComponent) renderPlayingView() string {
 	// Controls help
 	arrowControls := "←→: Seek"
 	if p.collectionNavigation {
-		arrowControls = "←→: Previous/Next Track"
+		arrowControls += " • Shift+←→: Previous/Next Track"
 	}
 	controls := styles.HelpStyle.Render("Space: Play/Pause • " + arrowControls + " • +/-: Volume")
 
