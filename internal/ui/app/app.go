@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -82,6 +83,23 @@ type favoritesLoadedMsg struct {
 	err    error
 }
 
+type libraryMouseTarget int
+
+const (
+	mouseTargetNone libraryMouseTarget = iota
+	mouseTargetPlaylist
+	mouseTargetPlaylistTrack
+	mouseTargetFavoriteTrack
+)
+
+const mouseDoubleClickWindow = 400 * time.Millisecond
+
+type mouseClick struct {
+	target libraryMouseTarget
+	index  int
+	at     time.Time
+}
+
 // App represents the main application model
 type App struct {
 	// Window size
@@ -119,6 +137,14 @@ type App struct {
 	favoriteTracks        []soundcloud.Track
 	favoriteSelectedIndex int
 	favoritesError        error
+
+	// Collection playback survives leaving its source view, allowing next/previous
+	// and auto-advance to follow the selected playlist or favorites ordering.
+	playbackCollection      []soundcloud.Track
+	playbackCollectionIndex int
+
+	now       func() time.Time
+	lastClick mouseClick
 }
 
 // NewApp creates a new application instance
@@ -142,11 +168,20 @@ func NewApp() *App {
 // NewAppWithDependencies creates an app with explicit ports for deterministic
 // tests and future alternate frontends, while NewApp keeps production defaults.
 func NewAppWithDependencies(client SoundCloudClient, audioPlayer audio.Player, streamExtractor audio.StreamExtractor) *App {
+	return NewAppWithDependenciesAndClock(client, audioPlayer, streamExtractor, time.Now)
+}
+
+// NewAppWithDependenciesAndClock injects the double-click clock so mouse input
+// behavior stays deterministic under test without sleeping.
+func NewAppWithDependenciesAndClock(client SoundCloudClient, audioPlayer audio.Player, streamExtractor audio.StreamExtractor, now func() time.Time) *App {
+	if now == nil {
+		now = time.Now
+	}
 	// Initialize components
 	searchComponent := search.NewSearchComponent(client)
 	playerComponent := player.NewPlayerComponent(audioPlayer, streamExtractor)
 
-	return &App{
+	application := &App{
 		width:               80,
 		height:              24,
 		currentView:         ViewSearch,
@@ -161,7 +196,10 @@ func NewAppWithDependencies(client SoundCloudClient, audioPlayer audio.Player, s
 		playlistsMode:       playlistModeList,
 		playlistTracksState: loadNotStarted,
 		favoritesState:      loadNotStarted,
+		now:                 now,
 	}
+	application.setComponentSizes()
+	return application
 }
 
 func renderAuthNotice(client SoundCloudClient) string {
@@ -212,6 +250,22 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, tea.Batch(cmds...)
 
 		case tea.KeyLeft, tea.KeyRight:
+			if a.currentView == ViewPlaylists && a.playlistsMode == playlistModeList {
+				if cmd := a.handlePlaylistsKey(msg); cmd != nil {
+					cmds = append(cmds, cmd)
+				}
+				return a, tea.Batch(cmds...)
+			}
+			if a.hasPlaybackCollection() {
+				delta := 1
+				if msg.Type == tea.KeyLeft {
+					delta = -1
+				}
+				if cmd := a.skipCollectionTrack(delta); cmd != nil {
+					cmds = append(cmds, cmd)
+				}
+				return a, tea.Batch(cmds...)
+			}
 			if a.currentView == ViewPlaylists {
 				if cmd := a.handlePlaylistsKey(msg); cmd != nil {
 					cmds = append(cmds, cmd)
@@ -254,6 +308,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// Handle track selection from search
 			if selectedTrack := a.searchComponent.GetSelectedTrack(); selectedTrack != nil {
+				a.clearPlaybackCollection()
 				// Don't clear selection immediately - wait for playback result
 				playCmd := player.PlayTrackMsg{Track: selectedTrack}
 				updatedPlayer, playerCmd := a.playerComponent.Update(playCmd)
@@ -279,13 +334,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+	case tea.MouseMsg:
+		return a.handleMouse(msg)
+
 	case tea.WindowSizeMsg:
 		a.width = msg.Width
 		a.height = msg.Height
-
-		// Update component sizes
-		a.searchComponent.SetSize(msg.Width, msg.Height-4) // Reserve space for header/footer
-		a.playerComponent.SetSize(msg.Width, msg.Height-4)
+		a.setComponentSizes()
 
 	case playlistsLoadedMsg:
 		if msg.err != nil {
@@ -338,9 +393,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Playback failed - reset search state and show error
 		a.searchComponent.ClearSelection()
 		a.searchComponent.ResetToResults()
-		// Stay in search view to let user try another track
-		// The error will be shown in the player component
+		if cmd := a.advanceAfterCollectionTrack(msg.Track); cmd != nil {
+			return a, cmd
+		}
 		return a, nil
+
+	case player.PlaybackCompletedMsg:
+		return a, a.advanceAfterCollectionTrack(msg.Track)
 
 	default:
 		// Pass other messages to components
@@ -433,7 +492,11 @@ func (a *App) renderFooter() string {
 
 	// Add global audio controls (work from any view)
 	if a.playerComponent.GetCurrentTrack() != nil {
-		helpText += " • Space: Play/Pause • ←→: Seek • +/-: Volume"
+		arrowControls := "←→: Seek"
+		if a.hasPlaybackCollection() {
+			arrowControls = "←→: Previous/Next Track"
+		}
+		helpText += " • Space: Play/Pause • " + arrowControls + " • +/-: Volume"
 	}
 
 	// Add view-specific help
@@ -531,8 +594,7 @@ func (a *App) handlePlaylistsKey(msg tea.KeyMsg) tea.Cmd {
 			if len(a.playlistTracks) == 0 {
 				return nil
 			}
-			track := a.playlistTracks[a.playlistTrackIndex]
-			return a.playTrack(&track)
+			return a.playCollectionTrack(a.playlistTracks, a.playlistTrackIndex)
 		}
 		if len(a.playlists) == 0 {
 			return nil
@@ -573,8 +635,7 @@ func (a *App) handleFavoritesKey(msg tea.KeyMsg) tea.Cmd {
 		if len(a.favoriteTracks) == 0 {
 			return nil
 		}
-		track := a.favoriteTracks[a.favoriteSelectedIndex]
-		return a.playTrack(&track)
+		return a.playCollectionTrack(a.favoriteTracks, a.favoriteSelectedIndex)
 	}
 	return nil
 }
@@ -583,6 +644,58 @@ func (a *App) playTrack(track *soundcloud.Track) tea.Cmd {
 	updatedPlayer, cmd := a.playerComponent.Update(player.PlayTrackMsg{Track: track})
 	a.playerComponent = updatedPlayer.(*player.PlayerComponent)
 	return cmd
+}
+
+// playCollectionTrack snapshots a playlist or Favorites ordering before
+// playback so navigation away from the library cannot lose auto-advance state.
+func (a *App) playCollectionTrack(tracks []soundcloud.Track, index int) tea.Cmd {
+	if len(tracks) == 0 {
+		return nil
+	}
+	a.playbackCollection = append([]soundcloud.Track(nil), tracks...)
+	a.playbackCollectionIndex = clampIndex(index, len(a.playbackCollection))
+	a.playerComponent.SetCollectionNavigation(true)
+	return a.playCurrentCollectionTrack()
+}
+
+func (a *App) hasPlaybackCollection() bool {
+	return len(a.playbackCollection) > 0 &&
+		a.playbackCollectionIndex >= 0 &&
+		a.playbackCollectionIndex < len(a.playbackCollection)
+}
+
+func (a *App) clearPlaybackCollection() {
+	a.playbackCollection = nil
+	a.playbackCollectionIndex = 0
+	a.playerComponent.SetCollectionNavigation(false)
+}
+
+func (a *App) skipCollectionTrack(delta int) tea.Cmd {
+	if !a.hasPlaybackCollection() {
+		return nil
+	}
+	next := a.playbackCollectionIndex + delta
+	if next < 0 || next >= len(a.playbackCollection) {
+		return nil
+	}
+	a.playbackCollectionIndex = next
+	return a.playCurrentCollectionTrack()
+}
+
+func (a *App) advanceAfterCollectionTrack(track *soundcloud.Track) tea.Cmd {
+	if !a.hasPlaybackCollection() || track == nil ||
+		a.playbackCollection[a.playbackCollectionIndex].ID != track.ID {
+		return nil
+	}
+	return a.skipCollectionTrack(1)
+}
+
+func (a *App) playCurrentCollectionTrack() tea.Cmd {
+	if !a.hasPlaybackCollection() {
+		return nil
+	}
+	track := a.playbackCollection[a.playbackCollectionIndex]
+	return a.playTrack(&track)
 }
 
 func (a *App) renderPlaylistsView() string {
@@ -620,13 +733,11 @@ func (a *App) renderPlaylistsView() string {
 		}
 	}
 
-	content := lipgloss.JoinVertical(
-		lipgloss.Left,
+	content := a.renderLibraryContent(
 		styles.TrackTitleStyle.Render("Personal Playlists "+rangeIndicator(visibleStart, visibleEnd, len(a.playlists))),
-		"",
-		lipgloss.JoinVertical(lipgloss.Left, items...),
+		items,
 	)
-	return styles.SearchResultsStyle.Render(content)
+	return a.libraryResultsStyle().Render(content)
 }
 
 func (a *App) renderPlaylistTracksView() string {
@@ -660,13 +771,11 @@ func (a *App) renderPlaylistTracksView() string {
 		}
 	}
 
-	content := lipgloss.JoinVertical(
-		lipgloss.Left,
+	content := a.renderLibraryContent(
 		styles.TrackTitleStyle.Render(title+" "+rangeIndicator(visibleStart, visibleEnd, len(a.playlistTracks))),
-		"",
-		lipgloss.JoinVertical(lipgloss.Left, items...),
+		items,
 	)
-	return styles.SearchResultsStyle.Render(content)
+	return a.libraryResultsStyle().Render(content)
 }
 
 func (a *App) renderFavoritesView() string {
@@ -696,13 +805,11 @@ func (a *App) renderFavoritesView() string {
 		}
 	}
 
-	content := lipgloss.JoinVertical(
-		lipgloss.Left,
+	content := a.renderLibraryContent(
 		styles.TrackTitleStyle.Render("Favorites "+rangeIndicator(visibleStart, visibleEnd, len(a.favoriteTracks))),
-		"",
-		lipgloss.JoinVertical(lipgloss.Left, items...),
+		items,
 	)
-	return styles.SearchResultsStyle.Render(content)
+	return a.libraryResultsStyle().Render(content)
 }
 
 func clampIndex(index, length int) int {
@@ -723,11 +830,133 @@ func moveIndex(index, length, delta int) int {
 }
 
 func (a *App) libraryVisibleItems() int {
-	maxVisible := a.height - 12
-	if maxVisible < 3 {
-		return 3
+	maxVisible := a.libraryContentHeight() - 6
+	if a.usesCompactLibraryLayout() {
+		maxVisible = a.libraryContentHeight() - 3
+	}
+	if maxVisible < 1 {
+		return 1
 	}
 	return maxVisible
+}
+
+// libraryContentHeight reserves exact rendered header/footer heights so long
+// collection views cannot scroll the application chrome off the terminal.
+func (a *App) libraryContentHeight() int {
+	height := a.height - lipgloss.Height(a.renderHeader()) - lipgloss.Height(a.renderFooter())
+	if height < 1 {
+		return 1
+	}
+	return height
+}
+
+func (a *App) setComponentSizes() {
+	contentHeight := a.libraryContentHeight()
+	a.searchComponent.SetSize(a.width, contentHeight)
+	// PlayerComponent's bordered panel adds three rows around its requested
+	// height, so pass one extra row before its internal four-row adjustment.
+	a.playerComponent.SetSize(a.width, contentHeight+1)
+}
+
+func (a *App) usesCompactLibraryLayout() bool {
+	return a.libraryContentHeight() < 7
+}
+
+func (a *App) libraryResultsStyle() lipgloss.Style {
+	innerHeight := a.libraryContentHeight() - 2 // Rounded border top + bottom.
+	if innerHeight < 1 {
+		innerHeight = 1
+	}
+	style := styles.SearchResultsStyle.Height(innerHeight)
+	if a.usesCompactLibraryLayout() {
+		return style.Padding(0)
+	}
+	return style
+}
+
+func (a *App) renderLibraryContent(title string, items []string) string {
+	parts := []string{title}
+	if !a.usesCompactLibraryLayout() {
+		parts = append(parts, "")
+	}
+	parts = append(parts, items...)
+	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+}
+
+func (a *App) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if msg.Action != tea.MouseActionPress || msg.Button != tea.MouseButtonLeft {
+		return a, nil
+	}
+	if view, ok := a.tabAt(msg.X, msg.Y); ok {
+		a.currentView = view
+		return a, a.activateCurrentView()
+	}
+
+	switch a.currentView {
+	case ViewPlaylists:
+		if a.playlistsMode == playlistModeList {
+			if index, ok := a.libraryItemAt(msg.Y, len(a.playlists), a.playlistSelectedIndex); ok {
+				a.playlistSelectedIndex = index
+				if a.isDoubleClick(mouseTargetPlaylist, index) {
+					return a, a.openSelectedPlaylist()
+				}
+			}
+			return a, nil
+		}
+		if index, ok := a.libraryItemAt(msg.Y, len(a.playlistTracks), a.playlistTrackIndex); ok {
+			a.playlistTrackIndex = index
+			if a.isDoubleClick(mouseTargetPlaylistTrack, index) {
+				return a, a.playCollectionTrack(a.playlistTracks, index)
+			}
+		}
+	case ViewFavorites:
+		if index, ok := a.libraryItemAt(msg.Y, len(a.favoriteTracks), a.favoriteSelectedIndex); ok {
+			a.favoriteSelectedIndex = index
+			if a.isDoubleClick(mouseTargetFavoriteTrack, index) {
+				return a, a.playCollectionTrack(a.favoriteTracks, index)
+			}
+		}
+	}
+	return a, nil
+}
+
+func (a *App) tabAt(x, y int) (ViewType, bool) {
+	if y != lipgloss.Height(a.renderHeader())-3 {
+		return ViewSearch, false
+	}
+	start := 0
+	for i, name := range []string{"Search", "Player", "Playlists", "Favorites"} {
+		width := lipgloss.Width(styles.InactiveTabStyle.Render(name))
+		if x >= start && x < start+width {
+			return ViewType(i), true
+		}
+		start += width
+	}
+	return ViewSearch, false
+}
+
+func (a *App) libraryItemAt(y, length, selected int) (int, bool) {
+	start, end := visibleWindow(length, selected, a.libraryVisibleItems())
+	firstItemY := lipgloss.Height(a.renderHeader()) + 4
+	if a.usesCompactLibraryLayout() {
+		firstItemY = lipgloss.Height(a.renderHeader()) + 2
+	}
+	index := start + y - firstItemY
+	if index < start || index >= end {
+		return 0, false
+	}
+	return index, true
+}
+
+func (a *App) isDoubleClick(target libraryMouseTarget, index int) bool {
+	now := a.now()
+	doubleClick := a.lastClick.target == target && a.lastClick.index == index &&
+		now.Sub(a.lastClick.at) <= mouseDoubleClickWindow
+	a.lastClick = mouseClick{target: target, index: index, at: now}
+	if doubleClick {
+		a.lastClick = mouseClick{}
+	}
+	return doubleClick
 }
 
 func visibleWindow(length, selected, maxVisible int) (int, int) {

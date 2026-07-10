@@ -51,7 +51,7 @@ type SearchComponent struct {
 	// Size
 	width  int
 	height int
-	
+
 	// State
 	state         State
 	query         string
@@ -59,7 +59,7 @@ type SearchComponent struct {
 	selectedIndex int
 	selectedTrack *soundcloud.Track
 	error         error
-	
+
 	// Dependencies
 	client soundcloud.ClientInterface
 }
@@ -104,15 +104,15 @@ func (s *SearchComponent) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return s, nil
 		}
-		
+
 	case SearchResultsMsg:
 		return s.handleSearchResults(msg)
-		
+
 	case tea.WindowSizeMsg:
 		s.width = msg.Width
 		s.height = msg.Height
 	}
-	
+
 	return s, nil
 }
 
@@ -125,13 +125,13 @@ func (s *SearchComponent) handleInputState(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 			return s, s.performSearch()
 		}
 		return s, nil
-		
+
 	case tea.KeyBackspace:
 		if len(s.query) > 0 {
 			s.query = s.query[:len(s.query)-1]
 		}
 		return s, nil
-		
+
 	case tea.KeyEsc:
 		s.query = ""
 		s.results = []soundcloud.Track{}
@@ -139,12 +139,12 @@ func (s *SearchComponent) handleInputState(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 		s.selectedTrack = nil
 		s.error = nil
 		return s, nil
-		
+
 	case tea.KeyRunes:
 		s.query += string(msg.Runes)
 		return s, nil
 	}
-	
+
 	return s, nil
 }
 
@@ -156,13 +156,13 @@ func (s *SearchComponent) handleResultsState(msg tea.KeyMsg) (tea.Model, tea.Cmd
 			s.selectedIndex--
 		}
 		return s, nil
-		
+
 	case tea.KeyDown:
 		if s.selectedIndex < len(s.results)-1 {
 			s.selectedIndex++
 		}
 		return s, nil
-		
+
 	case tea.KeyEnter:
 		if s.selectedIndex < len(s.results) {
 			s.selectedTrack = &s.results[s.selectedIndex]
@@ -170,7 +170,7 @@ func (s *SearchComponent) handleResultsState(msg tea.KeyMsg) (tea.Model, tea.Cmd
 			return s, nil
 		}
 		return s, nil
-		
+
 	case tea.KeyEsc:
 		s.state = StateInput
 		s.selectedIndex = 0
@@ -178,7 +178,7 @@ func (s *SearchComponent) handleResultsState(msg tea.KeyMsg) (tea.Model, tea.Cmd
 		s.results = []soundcloud.Track{}
 		return s, nil
 	}
-	
+
 	return s, nil
 }
 
@@ -194,7 +194,7 @@ func (s *SearchComponent) handleSearchResults(msg SearchResultsMsg) (tea.Model, 
 		s.selectedIndex = 0
 		s.error = nil
 	}
-	
+
 	return s, nil
 }
 
@@ -208,7 +208,7 @@ func (s *SearchComponent) performSearch() tea.Cmd {
 			}
 		}
 	}
-	
+
 	query := s.query
 	return func() tea.Msg {
 		results, err := s.client.Search(query)
@@ -221,6 +221,9 @@ func (s *SearchComponent) performSearch() tea.Cmd {
 
 // View renders the search component
 func (s *SearchComponent) View() string {
+	if s.usesCompactLayout() {
+		return s.renderCompactView()
+	}
 	switch s.state {
 	case StateInput:
 		return s.renderInputView()
@@ -237,12 +240,79 @@ func (s *SearchComponent) View() string {
 	}
 }
 
+// renderCompactView preserves the application header/footer on short terminals
+// by trading decorative frames and help text for the active search state.
+func (s *SearchComponent) renderCompactView() string {
+	switch s.state {
+	case StateInput:
+		return lipgloss.JoinVertical(
+			lipgloss.Left,
+			styles.TrackTitleStyle.Render("Search: "+s.query+"█"),
+			styles.HelpStyle.Render("Enter: Search"),
+		)
+	case StateSearching:
+		return styles.LoadingStatusStyle.Render("Searching: " + s.query)
+	case StateResults:
+		if len(s.results) == 0 {
+			return styles.StatusStyle.Render("No results found for: " + s.query)
+		}
+		start, end := s.compactResultWindow()
+		items := make([]string, 0, end-start+1)
+		items = append(items, styles.TrackTitleStyle.Render(fmt.Sprintf("Results (%d)", len(s.results))))
+		for i := start; i < end; i++ {
+			track := s.results[i]
+			prefix := "  "
+			if i == s.selectedIndex {
+				prefix = "▶ "
+			}
+			items = append(items, styles.ListItemStyle.Render(prefix+track.Title+" - "+track.Artist()))
+		}
+		return lipgloss.JoinVertical(lipgloss.Left, items...)
+	case StateError:
+		if s.error == nil {
+			return styles.ErrorStatusStyle.Render("Search error")
+		}
+		return styles.ErrorStatusStyle.Render("Search error: " + s.error.Error())
+	case StateTrackSelected:
+		if s.selectedTrack == nil {
+			return styles.LoadingStatusStyle.Render("Loading track...")
+		}
+		return styles.LoadingStatusStyle.Render("Loading: " + s.selectedTrack.Title)
+	default:
+		return styles.StatusStyle.Render("Search")
+	}
+}
+
+func (s *SearchComponent) usesCompactLayout() bool {
+	return s.height < 11
+}
+
+func (s *SearchComponent) compactResultWindow() (int, int) {
+	maxItems := s.height - 1 // Header consumes one row.
+	if maxItems < 1 {
+		maxItems = 1
+	}
+	start := s.selectedIndex - maxItems/2
+	if start < 0 {
+		start = 0
+	}
+	end := start + maxItems
+	if end > len(s.results) {
+		end = len(s.results)
+		start = end - maxItems
+		if start < 0 {
+			start = 0
+		}
+	}
+	return start, end
+}
+
 // renderInputView renders the input view
 func (s *SearchComponent) renderInputView() string {
 	// Search box
 	prompt := "Search SoundCloud:"
 	input := s.query + "█" // Cursor
-	
+
 	searchBox := styles.SearchBoxStyle.Render(
 		lipgloss.JoinVertical(
 			lipgloss.Left,
@@ -250,10 +320,10 @@ func (s *SearchComponent) renderInputView() string {
 			styles.InputFocusedStyle.Width(s.width-6).Render(input),
 		),
 	)
-	
+
 	// Help text
 	help := styles.HelpStyle.Render("Type to search, Enter to execute, Esc to clear")
-	
+
 	return lipgloss.JoinVertical(
 		lipgloss.Left,
 		searchBox,
@@ -270,7 +340,7 @@ func (s *SearchComponent) renderSearchingView() string {
 			styles.LoadingStatusStyle.Render("🔍 Searching..."),
 		),
 	)
-	
+
 	return searchBox
 }
 
@@ -281,16 +351,16 @@ func (s *SearchComponent) renderResultsView() string {
 			styles.StatusStyle.Render("No results found for: " + s.query),
 		)
 	}
-	
+
 	// Header
 	header := fmt.Sprintf("Search Results (%d found):", len(s.results))
-	
+
 	// Results list
 	var resultItems []string
 	visibleStart := 0
 	visibleEnd := len(s.results)
 	maxVisible := s.height - 8 // Reserve space for header, input, and help
-	
+
 	if len(s.results) > maxVisible {
 		if s.selectedIndex >= maxVisible/2 {
 			visibleStart = s.selectedIndex - maxVisible/2
@@ -303,7 +373,7 @@ func (s *SearchComponent) renderResultsView() string {
 			visibleEnd = maxVisible
 		}
 	}
-	
+
 	for i := visibleStart; i < visibleEnd; i++ {
 		track := s.results[i]
 		item := fmt.Sprintf("%-50s %s (%s)",
@@ -311,29 +381,29 @@ func (s *SearchComponent) renderResultsView() string {
 			track.Artist(),
 			track.DurationString(),
 		)
-		
+
 		if i == s.selectedIndex {
 			resultItems = append(resultItems, styles.SelectedListItemStyle.Render("▶ "+item))
 		} else {
 			resultItems = append(resultItems, styles.ListItemStyle.Render("  "+item))
 		}
 	}
-	
+
 	// Scroll indicator
 	var scrollIndicator string
 	if len(s.results) > maxVisible {
 		scrollIndicator = fmt.Sprintf(" [%d-%d of %d]", visibleStart+1, visibleEnd, len(s.results))
 	}
-	
+
 	content := lipgloss.JoinVertical(
 		lipgloss.Left,
 		styles.TrackTitleStyle.Render(header+scrollIndicator),
 		"",
 		lipgloss.JoinVertical(lipgloss.Left, resultItems...),
 	)
-	
+
 	help := styles.HelpStyle.Render("↑↓: Navigate • Enter: Select • Esc: Back to search")
-	
+
 	return lipgloss.JoinVertical(
 		lipgloss.Left,
 		styles.SearchResultsStyle.Render(content),
@@ -351,9 +421,9 @@ func (s *SearchComponent) renderErrorView() string {
 			styles.ErrorStatusStyle.Render(s.error.Error()),
 		),
 	)
-	
+
 	help := styles.HelpStyle.Render("Esc: Back to search")
-	
+
 	return lipgloss.JoinVertical(
 		lipgloss.Left,
 		errorBox,
@@ -366,7 +436,7 @@ func (s *SearchComponent) renderTrackSelectedView() string {
 	if s.selectedTrack == nil {
 		return s.renderResultsView() // Fallback to results if no track selected
 	}
-	
+
 	loadingBox := styles.SearchBoxStyle.Render(
 		lipgloss.JoinVertical(
 			lipgloss.Left,
@@ -378,7 +448,7 @@ func (s *SearchComponent) renderTrackSelectedView() string {
 			styles.LoadingStatusStyle.Render("⏳ Fetching stream URL..."),
 		),
 	)
-	
+
 	return loadingBox
 }
 

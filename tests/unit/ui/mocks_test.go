@@ -21,6 +21,7 @@ type MockAudioPlayer struct {
 	stopCalls       int
 	lastStreamURL   string
 	lastStreamInfo  *audio.StreamInfo
+	seekPositions   []time.Duration
 	OnStop          func()
 }
 
@@ -85,6 +86,7 @@ func (m *MockAudioPlayer) Seek(position time.Duration) error {
 		return assert.AnError
 	}
 	m.position = position
+	m.seekPositions = append(m.seekPositions, position)
 	return nil
 }
 

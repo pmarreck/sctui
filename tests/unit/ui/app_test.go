@@ -3,13 +3,16 @@ package ui_test
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"soundcloud-tui/internal/soundcloud"
 	"soundcloud-tui/internal/ui/app"
+	"soundcloud-tui/internal/ui/components/player"
 )
 
 func TestApp_NewApp(t *testing.T) {
@@ -369,6 +372,185 @@ func TestApp_FavoritesTabLoadsAndPlaysTrack(t *testing.T) {
 	application = updated.(*app.App)
 	require.NotNil(t, cmd)
 	assert.Equal(t, "Favorite Track", application.GetCurrentTrack().Title)
+}
+
+func TestApp_CollectionPlaybackSkipsForwardAndSkipsUnavailableTracks(t *testing.T) {
+	tracks := []soundcloud.Track{
+		{ID: 1, Title: "First", User: soundcloud.User{Username: "Artist"}},
+		{ID: 2, Title: "Unavailable", User: soundcloud.User{Username: "Artist"}},
+		{ID: 3, Title: "Playable", User: soundcloud.User{Username: "Artist"}},
+	}
+	application := app.NewAppWithDependencies(
+		&MockSoundCloudClient{
+			Authenticated: true,
+			FavoritesFunc: func() ([]soundcloud.Track, error) {
+				return tracks, nil
+			},
+		},
+		&MockAudioPlayer{},
+		&MockStreamExtractor{},
+	)
+
+	updated, cmd := application.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	application = updated.(*app.App)
+	require.NotNil(t, cmd)
+	updated, _ = application.Update(cmd())
+	application = updated.(*app.App)
+
+	updated, cmd = application.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	application = updated.(*app.App)
+	require.NotNil(t, cmd)
+	assert.Equal(t, "First", application.GetCurrentTrack().Title)
+	assert.Contains(t, application.View(), "←→: Previous/Next Track")
+
+	// The next key must advance immediately, even before the first asynchronous
+	// stream request has returned.
+	updated, cmd = application.Update(tea.KeyMsg{Type: tea.KeyRight})
+	application = updated.(*app.App)
+	require.NotNil(t, cmd)
+	assert.Equal(t, "Unavailable", application.GetCurrentTrack().Title)
+
+	updated, cmd = application.Update(player.PlaybackFailedMsg{
+		Track: application.GetCurrentTrack(),
+		Error: fmt.Errorf("HTTP 404"),
+	})
+	application = updated.(*app.App)
+	require.NotNil(t, cmd)
+	assert.Equal(t, "Playable", application.GetCurrentTrack().Title)
+}
+
+func TestApp_CollectionPlaybackAdvancesAfterTrackCompletion(t *testing.T) {
+	tracks := []soundcloud.Track{
+		{ID: 1, Title: "First", User: soundcloud.User{Username: "Artist"}},
+		{ID: 2, Title: "Second", User: soundcloud.User{Username: "Artist"}},
+	}
+	application := app.NewAppWithDependencies(
+		&MockSoundCloudClient{
+			Authenticated: true,
+			PlaylistFunc: func(playlistID int64) ([]soundcloud.Track, error) {
+				return tracks, nil
+			},
+			LibraryFunc: func() ([]soundcloud.Playlist, error) {
+				return []soundcloud.Playlist{{ID: 10, Title: "Queue"}}, nil
+			},
+		},
+		&MockAudioPlayer{},
+		&MockStreamExtractor{},
+	)
+
+	updated, _ := application.Update(tea.KeyMsg{Type: tea.KeyTab})
+	application = updated.(*app.App)
+	updated, cmd := application.Update(tea.KeyMsg{Type: tea.KeyTab})
+	application = updated.(*app.App)
+	require.NotNil(t, cmd)
+	updated, _ = application.Update(cmd())
+	application = updated.(*app.App)
+	updated, cmd = application.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	application = updated.(*app.App)
+	require.NotNil(t, cmd)
+	updated, _ = application.Update(cmd())
+	application = updated.(*app.App)
+	updated, cmd = application.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	application = updated.(*app.App)
+	require.NotNil(t, cmd)
+	assert.Equal(t, "First", application.GetCurrentTrack().Title)
+
+	updated, cmd = application.Update(player.PlaybackCompletedMsg{Track: application.GetCurrentTrack()})
+	application = updated.(*app.App)
+	require.NotNil(t, cmd)
+	assert.Equal(t, "Second", application.GetCurrentTrack().Title)
+}
+
+func TestApp_MouseClicksTabsAndDoubleClicksLibraryItems(t *testing.T) {
+	now := time.Date(2026, time.July, 10, 9, 0, 0, 0, time.UTC)
+	tracks := []soundcloud.Track{
+		{ID: 1, Title: "First", User: soundcloud.User{Username: "Artist"}},
+		{ID: 2, Title: "Second", User: soundcloud.User{Username: "Artist"}},
+	}
+	application := app.NewAppWithDependenciesAndClock(
+		&MockSoundCloudClient{
+			Authenticated: true,
+			LibraryFunc: func() ([]soundcloud.Playlist, error) {
+				return []soundcloud.Playlist{
+					{ID: 10, Title: "First Playlist"},
+					{ID: 20, Title: "Clicked Playlist"},
+				}, nil
+			},
+			PlaylistFunc: func(playlistID int64) ([]soundcloud.Track, error) {
+				return tracks, nil
+			},
+		},
+		&MockAudioPlayer{},
+		&MockStreamExtractor{},
+		func() time.Time { return now },
+	)
+
+	// The Playlists tab occupies the third tab at the rendered header's tab row.
+	updated, cmd := application.Update(mousePress(24, 3))
+	application = updated.(*app.App)
+	require.NotNil(t, cmd)
+	assert.Equal(t, app.ViewPlaylists, application.GetCurrentView())
+	updated, _ = application.Update(cmd())
+	application = updated.(*app.App)
+
+	// A single click selects the second visible playlist.
+	updated, _ = application.Update(mousePress(4, 11))
+	application = updated.(*app.App)
+	assert.Contains(t, application.View(), "▶ Clicked Playlist")
+
+	// A second click opens that selected playlist.
+	now = now.Add(100 * time.Millisecond)
+	updated, cmd = application.Update(mousePress(4, 11))
+	application = updated.(*app.App)
+	require.NotNil(t, cmd)
+	updated, _ = application.Update(cmd())
+	application = updated.(*app.App)
+	assert.Contains(t, application.View(), "Second")
+
+	// A single click selects the second track, and a second click starts it.
+	now = now.Add(100 * time.Millisecond)
+	updated, _ = application.Update(mousePress(4, 11))
+	application = updated.(*app.App)
+	assert.Contains(t, application.View(), "▶ Second")
+	now = now.Add(100 * time.Millisecond)
+	updated, cmd = application.Update(mousePress(4, 11))
+	application = updated.(*app.App)
+	require.NotNil(t, cmd)
+	assert.Equal(t, "Second", application.GetCurrentTrack().Title)
+}
+
+func TestApp_LongContentFitsBelowHeaderAndAboveFooter(t *testing.T) {
+	tracks := make([]soundcloud.Track, 40)
+	for i := range tracks {
+		tracks[i] = soundcloud.Track{ID: int64(i + 1), Title: fmt.Sprintf("Favorite %d", i+1)}
+	}
+	application := app.NewAppWithDependencies(
+		&MockSoundCloudClient{FavoritesFunc: func() ([]soundcloud.Track, error) { return tracks, nil }},
+		&MockAudioPlayer{},
+		&MockStreamExtractor{},
+	)
+
+	updated, _ := application.Update(tea.WindowSizeMsg{Width: 80, Height: 16})
+	application = updated.(*app.App)
+	assert.LessOrEqual(t, lipgloss.Height(application.View()), 16)
+	assert.Contains(t, application.View(), "SoundCloud TUI")
+	updated, cmd := application.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	application = updated.(*app.App)
+	require.NotNil(t, cmd)
+	updated, _ = application.Update(cmd())
+	application = updated.(*app.App)
+
+	assert.LessOrEqual(t, lipgloss.Height(application.View()), 16)
+	assert.Contains(t, application.View(), "SoundCloud TUI")
+	assert.Contains(t, application.View(), "Favorites")
+
+	application.SetCurrentView(app.ViewPlayer)
+	assert.LessOrEqual(t, lipgloss.Height(application.View()), 16)
+	assert.Contains(t, application.View(), "SoundCloud TUI")
+}
+
+func mousePress(x, y int) tea.MouseMsg {
+	return tea.MouseMsg{X: x, Y: y, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress}
 }
 
 func TestApp_ErrorHandling(t *testing.T) {

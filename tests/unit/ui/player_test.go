@@ -134,6 +134,54 @@ func TestPlayerComponent_PlayTrackStopsCurrentPlaybackBeforeExtractingNextStream
 	assert.Contains(t, messageTypeNames(msgs), "player.StreamInfoMsg")
 }
 
+func TestPlayerComponent_IgnoresStaleStreamResolutionAfterANewerTrackIsSelected(t *testing.T) {
+	mockPlayer := &MockAudioPlayer{}
+	mockExtractor := &MockStreamExtractor{
+		ExtractFunc: func(ctx context.Context, trackID int64) (*audio.StreamInfo, error) {
+			return &audio.StreamInfo{URL: fmt.Sprintf("https://example.com/%d.m3u8", trackID), Format: "hls"}, nil
+		},
+	}
+	component := player.NewPlayerComponent(mockPlayer, mockExtractor)
+	first := &soundcloud.Track{ID: 1, Title: "First"}
+	second := &soundcloud.Track{ID: 2, Title: "Second"}
+
+	updated, firstCmd := component.Update(player.PlayTrackMsg{Track: first})
+	component = updated.(*player.PlayerComponent)
+	staleMessages := runFirstImmediateCommand(firstCmd)
+	require.Len(t, staleMessages, 1)
+
+	updated, _ = component.Update(player.PlayTrackMsg{Track: second})
+	component = updated.(*player.PlayerComponent)
+	updated, staleCmd := component.Update(staleMessages[0])
+	component = updated.(*player.PlayerComponent)
+
+	assert.Equal(t, second, component.GetCurrentTrack())
+	assert.Equal(t, player.StateLoading, component.GetState())
+	assert.Nil(t, staleCmd)
+	assert.Equal(t, 0, mockPlayer.playStreamCalls)
+}
+
+func TestPlayerComponent_ReportsTrackCompletion(t *testing.T) {
+	mockPlayer := &MockAudioPlayer{state: audio.StateStopped}
+	component := player.NewPlayerComponent(mockPlayer, nil)
+	track := &soundcloud.Track{ID: 1, Title: "Complete", Duration: 60_000}
+	component.SetCurrentTrack(track)
+	component.SetState(player.StatePlaying)
+
+	updated, cmd := component.Update(player.ProgressUpdateMsg{
+		Position: 60 * time.Second,
+		Duration: 60 * time.Second,
+	})
+	component = updated.(*player.PlayerComponent)
+	require.NotNil(t, cmd)
+
+	message := cmd()
+	completed, ok := message.(player.PlaybackCompletedMsg)
+	require.True(t, ok)
+	assert.Equal(t, track, completed.Track)
+	assert.Equal(t, player.StateCompleted, component.GetState())
+}
+
 func TestPlayerComponent_TimeoutsUseSharedAudioDefaults(t *testing.T) {
 	assert.Equal(t, audio.StreamExtractionTimeout, player.StreamExtractionTimeout)
 	assert.Equal(t, audio.PlaybackStartTimeout, player.PlaybackStartTimeout)
@@ -250,6 +298,33 @@ func TestPlayerComponent_SeekControls(t *testing.T) {
 	component = updatedComponent.(*player.PlayerComponent)
 
 	assert.NotNil(t, cmd) // Should return seek command
+}
+
+func TestPlayerComponent_RepeatedSeekForwardUsesTheLatestRequestedPosition(t *testing.T) {
+	mockPlayer := &MockAudioPlayer{
+		state:    audio.StatePlaying,
+		duration: 60 * time.Second,
+	}
+	component := player.NewPlayerComponent(mockPlayer, nil)
+	component.SetState(player.StatePlaying)
+
+	updated, _ := component.Update(player.ProgressUpdateMsg{
+		Position: 10 * time.Second,
+		Duration: 60 * time.Second,
+	})
+	component = updated.(*player.PlayerComponent)
+
+	updated, firstSeek := component.Update(tea.KeyMsg{Type: tea.KeyRight})
+	component = updated.(*player.PlayerComponent)
+	updated, secondSeek := component.Update(tea.KeyMsg{Type: tea.KeyRight})
+	component = updated.(*player.PlayerComponent)
+	require.NotNil(t, firstSeek)
+	require.NotNil(t, secondSeek)
+
+	_ = firstSeek()
+	_ = secondSeek()
+	assert.Equal(t, []time.Duration{20 * time.Second, 30 * time.Second}, mockPlayer.seekPositions)
+	assert.Equal(t, 30*time.Second, component.GetPosition())
 }
 
 func TestPlayerComponent_StateTransitions(t *testing.T) {

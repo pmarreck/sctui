@@ -1,5 +1,45 @@
 # Implementation Plan for Open-Source SoundCloud TUI Client in Go
 
+## Current Work: Collection Playback and Reliable Skipping (2026-07-10 EDT)
+
+Goal: make repeated forward skips reliable, continue through the active
+playlist or Favorites collection after a track completes or cannot be played,
+and make the library usable with mouse or long collections.
+
+Done criteria:
+- [x] Repeated forward skips advance through the active collection without
+  reusing a stale playback position or stream request.
+- [x] Playlist/Favorites playback retains an ordered collection context and
+  advances automatically when a track completes.
+- [x] Playback failures, including unavailable/DRM tracks, automatically try
+  later tracks in that same collection until one starts or it is exhausted.
+- [x] `./test` and `./build` pass before commit.
+  Completed 2026-07-10 09:28 EDT.
+- [x] Mouse clicks select tabs and tracks; double-clicks open playlists or play
+  tracks through the same collection playback path as keyboard input.
+- [x] Long playlist, Favorites, Search, and Player panels remain below the fixed header and
+  above the footer at the current terminal height.
+
+Next small behaviors:
+- [x] Collection context: a selected playlist/favorite track remembers its
+  source ordering after navigating away from the library view.
+  Curiosity poke: can returning from a playlist list erase the context of a
+  currently playing private playlist?
+- [x] Skip behavior: repeated right-arrow presses target successive tracks and
+  stale asynchronous stream results cannot overwrite the newest choice.
+  Curiosity poke: can a slow first stream-resolution command begin playback
+  after two faster skips?
+- [x] Auto-advance behavior: completion and playback failures select the next
+  collection member, preserving the final failure when no playable track remains.
+  Curiosity poke: can an old completion message advance a newly selected track?
+- [x] Mouse behavior: single clicks update selections and double-clicks perform
+  their keyboard-equivalent action.
+  Curiosity poke: can a double-click accidentally play the adjacent row after a
+  bounded list window shifts?
+- [x] Layout behavior: library/player/search panel height fits the terminal after accounting
+  for header/footer chrome.
+  Curiosity poke: can a very short terminal leave an unusable negative height?
+
 ## Current Work: SoundCloud+ DRM Stream Detection (2026-07-08 EDT)
 
 Goal: stop reporting misleading transcoding 404s for major-label SoundCloud+
