@@ -44,3 +44,14 @@ func TestBufferedStreamPlayer_SeekDoesNotDeadlock(t *testing.T) {
 		t.Fatal("Seek deadlocked (no return within 2s) — RWMutex self-deadlock")
 	}
 }
+
+func TestPositionTrackerUpdateRetainsSeekOffset(t *testing.T) {
+	tracker := &PositionTracker{}
+	tracker.Start(44100)
+	tracker.SetPosition(10 * time.Second)
+	tracker.Update()
+
+	if got := tracker.GetPosition(); got < 10*time.Second {
+		t.Fatalf("position after seek update = %s, want at least %s", got, 10*time.Second)
+	}
+}

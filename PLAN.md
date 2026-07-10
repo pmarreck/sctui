@@ -1,5 +1,15 @@
 # Implementation Plan for Open-Source SoundCloud TUI Client in Go
 
+## Current Work: Seek Before First Progress Update (2026-07-10 EDT)
+
+Goal: prevent `→` from seeking to zero when the audio backend knows the track
+duration but the UI has not received its first duration update yet.
+
+Done criteria:
+- [x] Forward seek uses the audio backend's duration when the component cache is zero.
+- [x] `./test` and `./build` pass before commit.
+  Completed 2026-07-10 10:24 EDT.
+
 ## Current Work: Ctrl+Q Quit Shortcut (2026-07-10 EDT)
 
 Goal: accept the conventional `Ctrl+Q` quit shortcut alongside `Ctrl+C`.

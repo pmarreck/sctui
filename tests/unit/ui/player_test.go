@@ -327,6 +327,37 @@ func TestPlayerComponent_RepeatedSeekForwardUsesTheLatestRequestedPosition(t *te
 	assert.Equal(t, 30*time.Second, component.GetPosition())
 }
 
+func TestPlayerComponent_SeekForwardUsesAudioDurationBeforeFirstProgressUpdate(t *testing.T) {
+	mockPlayer := &MockAudioPlayer{
+		state:    audio.StatePlaying,
+		duration: 60 * time.Second,
+	}
+	component := player.NewPlayerComponent(mockPlayer, nil)
+	component.SetState(player.StatePlaying)
+
+	updated, cmd := component.Update(tea.KeyMsg{Type: tea.KeyRight})
+	component = updated.(*player.PlayerComponent)
+	require.NotNil(t, cmd)
+	_ = cmd()
+
+	assert.Equal(t, []time.Duration{10 * time.Second}, mockPlayer.seekPositions)
+	assert.Equal(t, 10*time.Second, component.GetPosition())
+}
+
+func TestPlayerComponent_SeekForwardDoesNotRestartWhenDurationIsUnknown(t *testing.T) {
+	mockPlayer := &MockAudioPlayer{state: audio.StatePlaying}
+	component := player.NewPlayerComponent(mockPlayer, nil)
+	component.SetState(player.StatePlaying)
+
+	updated, cmd := component.Update(tea.KeyMsg{Type: tea.KeyRight})
+	component = updated.(*player.PlayerComponent)
+	require.NotNil(t, cmd)
+	_, ok := cmd().(player.ProgressUpdateMsg)
+	assert.True(t, ok)
+	assert.Empty(t, mockPlayer.seekPositions)
+	assert.Equal(t, time.Duration(0), component.GetPosition())
+}
+
 func TestPlayerComponent_StateTransitions(t *testing.T) {
 	mockPlayer := &MockAudioPlayer{}
 	component := player.NewPlayerComponent(mockPlayer, nil)

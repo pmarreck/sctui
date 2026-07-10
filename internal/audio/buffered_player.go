@@ -80,6 +80,7 @@ type PositionTracker struct {
 	pausedTime   time.Time
 	totalPaused  time.Duration
 	lastPosition time.Duration
+	basePosition time.Duration
 	sampleRate   beep.SampleRate
 }
 
@@ -891,6 +892,8 @@ func (pt *PositionTracker) Start(sampleRate beep.SampleRate) {
 	pt.startTime = time.Now()
 	pt.sampleRate = sampleRate
 	pt.totalPaused = 0
+	pt.basePosition = 0
+	pt.lastPosition = 0
 }
 
 func (pt *PositionTracker) Stop() {
@@ -927,7 +930,7 @@ func (pt *PositionTracker) Update() {
 		elapsed -= time.Since(pt.pausedTime)
 	}
 
-	pt.lastPosition = elapsed
+	pt.lastPosition = pt.basePosition + elapsed
 }
 
 func (pt *PositionTracker) GetPosition() time.Duration {
@@ -940,6 +943,7 @@ func (pt *PositionTracker) SetPosition(position time.Duration) {
 	pt.mu.Lock()
 	defer pt.mu.Unlock()
 	pt.lastPosition = position
+	pt.basePosition = position
 	pt.startTime = time.Now()
 	pt.totalPaused = 0
 	pt.pausedTime = time.Time{}

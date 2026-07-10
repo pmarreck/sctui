@@ -397,9 +397,23 @@ func (p *PlayerComponent) seekForward() (tea.Model, tea.Cmd) {
 		return p, nil
 	}
 
+	duration := p.duration
+	if duration <= 0 {
+		duration = p.audioPlayer.GetDuration()
+		p.duration = duration
+	}
+	if duration <= 0 {
+		return p, func() tea.Msg {
+			return ProgressUpdateMsg{
+				Position: p.audioPlayer.GetPosition(),
+				Duration: p.audioPlayer.GetDuration(),
+			}
+		}
+	}
+
 	newPos := p.position + 10*time.Second
-	if newPos > p.duration {
-		newPos = p.duration
+	if newPos > duration {
+		newPos = duration
 	}
 	// Update immediately so rapid repeated keypresses calculate from the most
 	// recently requested position instead of waiting for async seek completion.
