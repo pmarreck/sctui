@@ -1,9 +1,11 @@
 # Dirtree: Stateful directory trees in the CLI for humans and LLMs. https://github.com/pmarreck/dirtree
 ver=1.2
 annotate=[
+	.mechatron-prime/targets = Exact-commit Mechatron Prime CI target manifest for the runnable package and full Nix test check.
 	LEARNINGS.md = environment and repo workflow learnings discovered during implementation
 	MEMORIES/Bubble Tea reserves space as KeySpace so focused text input needs explicit routing = Project lesson on Bubble Tea space events and focused text-input ownership.
 	MISTAKES.md = workflow mistakes observed during agent work for future avoidance
+	README.md = Project overview, usage, controls, development guidance, and dynamic Mechatron Prime CI status badge.
 	internal/audio/buffered_preload_test.go = regression test for completed short downloads satisfying preload
 	internal/audio/hls_decoder.go = ffmpeg-backed HLS decoder that emits seekable in-memory PCM for SoundCloud streams
 	internal/audio/pcm_streamer.go = seekable Beep streamer over stereo s16le PCM bytes decoded from HLS
@@ -15,6 +17,7 @@ annotate=[
 	internal/soundcloud/live_debug_test.go = Env-gated live SoundCloud transcoding metadata debug probe with URL/key redaction.
 	internal/ui/app/app.go = Routes global input by active view state; Search text input owns space while playback owns it elsewhere.
 	internal/ui/components/search/search.go = Search state machine and renderer; accepts Bubble Tea KeySpace explicitly in text input.
+	test = Canonical full-suite runner for the same hermetic Nix test derivation used by Mechatron Prime.
 	tests/unit/audio/ffmpeg_hls_decoder_test.go = tests ffmpeg HLS command construction, PCM output, and URL-redacted errors
 	tests/unit/ui/app_test.go = App integration tests for navigation, library interaction, playback controls, and focused input routing.
 ]

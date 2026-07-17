@@ -1,5 +1,25 @@
 # Implementation Plan for Open-Source SoundCloud TUI Client in Go
 
+## Current Work: Mechatron Prime CI (2026-07-17 EDT)
+
+Goal: move repository CI from retired Garnix assumptions to the Thelio-hosted
+Mechatron Prime exact-commit workflow.
+
+Done criteria:
+- [x] Commit an intentional `.mechatron-prime/targets` manifest for the default
+  package and full test check.
+- [x] Add the canonical dynamic Mechatron Prime badge to `README.md` and remove
+  stale Garnix wording from project CI comments.
+- [x] Validate `./test`, `./build`, and each selected Nix target directly.
+- [x] Confirm the GitHub webhook through the canonical all-owner dry-run and a
+  scoped live provisioning pass.
+- [ ] Push `main` and verify the public badge reaches `PASSING`.
+
+Next small behavior:
+- [ ] Exact-commit CI configuration: manifest, badge, webhook, and live result.
+  Curiosity poke: the badge does not exist until the first accepted build, so
+  can verification distinguish `BUILDING` from an actually green result?
+
 ## Current Work: Spaces in Search Input (2026-07-17 EDT)
 
 Goal: let search queries contain spaces without toggling active playback.

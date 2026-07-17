@@ -1,5 +1,7 @@
 # SoundCloud TUI
 
+[![Mechatron Prime CI](https://img.shields.io/endpoint?url=https%3A%2F%2Fthelio-nixos.tail66c90.ts.net%2Fbadges%2Fsctui.json&style=for-the-badge)](https://thelio-nixos.tail66c90.ts.net/mechatron-prime/)
+
 A Terminal User Interface for SoundCloud written in Go, featuring real audio playback and interactive controls.
 
 ![SoundCloud TUI Demo](docs/demo.gif)

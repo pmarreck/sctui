@@ -84,8 +84,8 @@
         };
 
         # ── CI ───────────────────────────────────────────────────────────
-        # Garnix auto-evaluates every attr under `checks`. `nix flake check`
-        # runs them all locally.
+        # Mechatron Prime builds the exact attributes selected in
+        # `.mechatron-prime/targets`. `nix flake check` runs all checks locally.
         checks = {
           # Reuse the exact package build as a check.
           build = sctui;

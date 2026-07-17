@@ -1,0 +1,3 @@
+# Build the runnable package and execute the full hermetic test suite.
+packages.x86_64-linux.default
+checks.x86_64-linux.test
