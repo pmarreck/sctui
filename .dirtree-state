@@ -2,6 +2,7 @@
 ver=1.2
 annotate=[
 	LEARNINGS.md = environment and repo workflow learnings discovered during implementation
+	MEMORIES/Bubble Tea reserves space as KeySpace so focused text input needs explicit routing = Project lesson on Bubble Tea space events and focused text-input ownership.
 	MISTAKES.md = workflow mistakes observed during agent work for future avoidance
 	internal/audio/buffered_preload_test.go = regression test for completed short downloads satisfying preload
 	internal/audio/hls_decoder.go = ffmpeg-backed HLS decoder that emits seekable in-memory PCM for SoundCloud streams
@@ -12,5 +13,8 @@ annotate=[
 	internal/soundcloud/client.go = SoundCloud api-v2 client for auth, library playlists/favorites, playlist hydration, and media URL resolution
 	internal/soundcloud/client_test.go = fixture tests for playlists, favorites, large playlist hydration, and transcoding media URL resolution
 	internal/soundcloud/live_debug_test.go = Env-gated live SoundCloud transcoding metadata debug probe with URL/key redaction.
+	internal/ui/app/app.go = Routes global input by active view state; Search text input owns space while playback owns it elsewhere.
+	internal/ui/components/search/search.go = Search state machine and renderer; accepts Bubble Tea KeySpace explicitly in text input.
 	tests/unit/audio/ffmpeg_hls_decoder_test.go = tests ffmpeg HLS command construction, PCM output, and URL-redacted errors
+	tests/unit/ui/app_test.go = App integration tests for navigation, library interaction, playback controls, and focused input routing.
 ]

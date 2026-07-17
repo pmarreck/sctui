@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"soundcloud-tui/internal/audio"
 	"soundcloud-tui/internal/soundcloud"
 	"soundcloud-tui/internal/ui/app"
 	"soundcloud-tui/internal/ui/components/player"
@@ -21,6 +22,67 @@ func TestApp_NewApp(t *testing.T) {
 	require.NotNil(t, application)
 	assert.Equal(t, app.ViewSearch, application.GetCurrentView())
 	assert.False(t, application.IsQuitting())
+}
+
+func TestApp_SearchInputSpaceDoesNotTogglePlayback(t *testing.T) {
+	audioPlayer := &MockAudioPlayer{state: audio.StatePlaying}
+	application := app.NewAppWithDependencies(
+		&MockSoundCloudClient{},
+		audioPlayer,
+		&MockStreamExtractor{},
+	)
+
+	updated, _ := application.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("lofi hip")})
+	application = updated.(*app.App)
+	updated, cmd := application.Update(tea.KeyMsg{Type: tea.KeySpace})
+	application = updated.(*app.App)
+	require.Nil(t, cmd)
+	updated, _ = application.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("hop")})
+	application = updated.(*app.App)
+
+	assert.Contains(t, application.View(), "lofi hip hop")
+	assert.Equal(t, audio.StatePlaying, audioPlayer.GetState())
+}
+
+func TestApp_SpaceStillTogglesPlaybackOutsideSearchInput(t *testing.T) {
+	tests := []struct {
+		name  string
+		setup func(*testing.T, *app.App) *app.App
+	}{
+		{
+			name: "player view",
+			setup: func(_ *testing.T, application *app.App) *app.App {
+				application.SetCurrentView(app.ViewPlayer)
+				return application
+			},
+		},
+		{
+			name: "search results",
+			setup: func(t *testing.T, application *app.App) *app.App {
+				updated, _ := application.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("query")})
+				application = updated.(*app.App)
+				updated, searchCmd := application.Update(tea.KeyMsg{Type: tea.KeyEnter})
+				application = updated.(*app.App)
+				require.NotNil(t, searchCmd)
+				updated, _ = application.Update(searchCmd())
+				return updated.(*app.App)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			application := app.NewAppWithDependencies(
+				&MockSoundCloudClient{},
+				&MockAudioPlayer{state: audio.StatePlaying},
+				&MockStreamExtractor{},
+			)
+			application = tt.setup(t, application)
+
+			_, cmd := application.Update(tea.KeyMsg{Type: tea.KeySpace})
+			require.NotNil(t, cmd)
+		})
+	}
 }
 
 func TestApp_Navigation(t *testing.T) {

@@ -140,6 +140,10 @@ func (s *SearchComponent) handleInputState(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 		s.error = nil
 		return s, nil
 
+	case tea.KeySpace:
+		s.query += " "
+		return s, nil
+
 	case tea.KeyRunes:
 		s.query += string(msg.Runes)
 		return s, nil

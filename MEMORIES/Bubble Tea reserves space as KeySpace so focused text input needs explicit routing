@@ -1,0 +1,5 @@
+Bubble Tea delivers a pressed space as `tea.KeySpace`, not `tea.KeyRunes`.
+Because sctui handles global playback shortcuts before routing keys to the
+active view, focused text input must explicitly own `KeySpace` and append it.
+Keep the player fallback outside `search.StateInput`, including while Search
+results are visible, so fixing text entry does not disable play/pause.

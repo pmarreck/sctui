@@ -1,5 +1,21 @@
 # Implementation Plan for Open-Source SoundCloud TUI Client in Go
 
+## Current Work: Spaces in Search Input (2026-07-17 EDT)
+
+Goal: let search queries contain spaces without toggling active playback.
+
+Done criteria:
+- [x] Space appends to the query while the Search input dialog is active.
+- [x] Space retains play/pause behavior outside the Search input dialog.
+- [x] `./test` and `./build` pass before commit.
+  Completed 2026-07-17 14:56 EDT.
+
+Next small behavior:
+- [x] Route `KeySpace` according to active input ownership and support it in the
+  Search component's input state.
+  Curiosity poke: does fixing the global route accidentally disable play/pause
+  while Search results, rather than its input dialog, are visible?
+
 ## Current Work: Seek Before First Progress Update (2026-07-10 EDT)
 
 Goal: prevent `→` from seeking to zero when the audio backend knows the track

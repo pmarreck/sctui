@@ -261,7 +261,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, a.activateCurrentView()
 
 		case tea.KeySpace:
-			// Always pass space key to player component for play/pause
+			if a.currentView == ViewSearch && a.searchComponent.GetState() == search.StateInput {
+				updatedSearch, searchCmd := a.searchComponent.Update(msg)
+				a.searchComponent = updatedSearch.(*search.SearchComponent)
+				return a, searchCmd
+			}
+
+			// Outside text input, space remains the global play/pause control.
 			updatedPlayer, playerCmd := a.playerComponent.Update(msg)
 			a.playerComponent = updatedPlayer.(*player.PlayerComponent)
 			if playerCmd != nil {
