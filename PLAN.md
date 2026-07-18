@@ -13,10 +13,11 @@ Done criteria:
 - [x] Validate `./test`, `./build`, and each selected Nix target directly.
 - [x] Confirm the GitHub webhook through the canonical all-owner dry-run and a
   scoped live provisioning pass.
-- [ ] Push `main` and verify the public badge reaches `PASSING`.
+- [x] Push `main` and verify the public badge reaches `PASSING`.
+  Completed 2026-07-18 01:26 EDT.
 
 Next small behavior:
-- [ ] Exact-commit CI configuration: manifest, badge, webhook, and live result.
+- [x] Exact-commit CI configuration: manifest, badge, webhook, and live result.
   Curiosity poke: the badge does not exist until the first accepted build, so
   can verification distinguish `BUILDING` from an actually green result?
 
