@@ -1,5 +1,23 @@
 # Implementation Plan for Open-Source SoundCloud TUI Client in Go
 
+## Current Work: Player Tab Playback Indicator (2026-07-20 EDT)
+
+Goal: make active SoundCloud playback visible in the Player navigation tab.
+
+Done criteria:
+- [x] The Player tab reads `🔊 Player` only while the audio backend reports
+  active playback.
+- [x] The expanded playing-tab label and its mouse hit target share the same
+  source of truth.
+- [x] `./test` and `./build` pass before commit.
+  Completed 2026-07-20 14:55 EDT.
+
+Next small behavior:
+- [x] Render the Player label from the audio state and use it for tab hit
+  testing.
+  Curiosity poke: can adding a dynamic label make the final Player tab columns
+  select the adjacent Playlists tab?
+
 ## Current Work: Mechatron Prime CI (2026-07-17 EDT)
 
 Goal: move repository CI from retired Garnix assumptions to the Thelio-hosted

@@ -497,11 +497,11 @@ func (a *App) renderHeader() string {
 
 	// Navigation tabs
 	tabs := []string{}
-	for i, viewName := range []string{"Search", "Player", "Playlists", "Favorites"} {
-		if ViewType(i) == a.currentView {
-			tabs = append(tabs, styles.ActiveTabStyle.Render(viewName))
+	for _, view := range []ViewType{ViewSearch, ViewPlayer, ViewPlaylists, ViewFavorites} {
+		if view == a.currentView {
+			tabs = append(tabs, styles.ActiveTabStyle.Render(a.tabLabel(view)))
 		} else {
-			tabs = append(tabs, styles.InactiveTabStyle.Render(viewName))
+			tabs = append(tabs, styles.InactiveTabStyle.Render(a.tabLabel(view)))
 		}
 	}
 
@@ -516,6 +516,24 @@ func (a *App) renderHeader() string {
 	)
 
 	return styles.HeaderStyle.Render(header)
+}
+
+func (a *App) tabLabel(view ViewType) string {
+	switch view {
+	case ViewSearch:
+		return "Search"
+	case ViewPlayer:
+		if a.audioPlayer != nil && a.audioPlayer.GetState() == audio.StatePlaying {
+			return "🔊 Player"
+		}
+		return "Player"
+	case ViewPlaylists:
+		return "Playlists"
+	case ViewFavorites:
+		return "Favorites"
+	default:
+		return ""
+	}
 }
 
 // renderFooter renders the application footer
@@ -1024,10 +1042,10 @@ func (a *App) tabAt(x, y int) (ViewType, bool) {
 		return ViewSearch, false
 	}
 	start := 0
-	for i, name := range []string{"Search", "Player", "Playlists", "Favorites"} {
-		width := lipgloss.Width(styles.InactiveTabStyle.Render(name))
+	for _, view := range []ViewType{ViewSearch, ViewPlayer, ViewPlaylists, ViewFavorites} {
+		width := lipgloss.Width(styles.InactiveTabStyle.Render(a.tabLabel(view)))
 		if x >= start && x < start+width {
-			return ViewType(i), true
+			return view, true
 		}
 		start += width
 	}

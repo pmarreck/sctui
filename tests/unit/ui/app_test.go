@@ -24,6 +24,51 @@ func TestApp_NewApp(t *testing.T) {
 	assert.False(t, application.IsQuitting())
 }
 
+func TestApp_PlayerTabShowsSpeakerDuringPlayback(t *testing.T) {
+	tests := []struct {
+		name          string
+		state         audio.PlayerState
+		showsSpeaker  bool
+		playerTabX    int
+	}{
+		{
+			name:         "playing",
+			state:        audio.StatePlaying,
+			showsSpeaker: true,
+			playerTabX:   24,
+		},
+		{
+			name:         "paused",
+			state:        audio.StatePaused,
+			showsSpeaker: false,
+		},
+		{
+			name:         "stopped",
+			state:        audio.StateStopped,
+			showsSpeaker: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			application := app.NewAppWithDependencies(
+				&MockSoundCloudClient{},
+				&MockAudioPlayer{state: tt.state},
+				&MockStreamExtractor{},
+			)
+
+			view := application.View()
+			if tt.showsSpeaker {
+				assert.Contains(t, view, "🔊 Player")
+				updated, _ := application.Update(mousePress(tt.playerTabX, 3))
+				assert.Equal(t, app.ViewPlayer, updated.(*app.App).GetCurrentView())
+				return
+			}
+			assert.NotContains(t, view, "🔊 Player")
+		})
+	}
+}
+
 func TestApp_SearchInputSpaceDoesNotTogglePlayback(t *testing.T) {
 	audioPlayer := &MockAudioPlayer{state: audio.StatePlaying}
 	application := app.NewAppWithDependencies(
