@@ -24,47 +24,41 @@ func TestApp_NewApp(t *testing.T) {
 	assert.False(t, application.IsQuitting())
 }
 
-func TestApp_PlayerTabShowsSpeakerDuringPlayback(t *testing.T) {
-	tests := []struct {
-		name          string
-		state         audio.PlayerState
-		showsSpeaker  bool
-		playerTabX    int
-	}{
-		{
-			name:         "playing",
-			state:        audio.StatePlaying,
-			showsSpeaker: true,
-			playerTabX:   24,
-		},
-		{
-			name:         "paused",
-			state:        audio.StatePaused,
-			showsSpeaker: false,
-		},
-		{
-			name:         "stopped",
-			state:        audio.StateStopped,
-			showsSpeaker: false,
-		},
+func TestApp_TerminalTitleShowsPlaybackState(t *testing.T) {
+	newApplication := func() (*app.App, *MockAudioPlayer) {
+		audioPlayer := &MockAudioPlayer{}
+		application := app.NewAppWithDependencies(
+			&MockSoundCloudClient{},
+			audioPlayer,
+			&MockStreamExtractor{},
+		)
+		application.Init()
+		return application, audioPlayer
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			application := app.NewAppWithDependencies(
-				&MockSoundCloudClient{},
-				&MockAudioPlayer{state: tt.state},
-				&MockStreamExtractor{},
-			)
+	t.Run("playing", func(t *testing.T) {
+		application, audioPlayer := newApplication()
+		audioPlayer.state = audio.StatePlaying
 
-			view := application.View()
-			if tt.showsSpeaker {
-				assert.Contains(t, view, "🔊 Player")
-				updated, _ := application.Update(mousePress(tt.playerTabX, 3))
-				assert.Equal(t, app.ViewPlayer, updated.(*app.App).GetCurrentView())
-				return
-			}
-			assert.NotContains(t, view, "🔊 Player")
+		updated, titleCmd := application.Update(player.PlaybackStartedMsg{})
+		application = updated.(*app.App)
+		require.NotNil(t, titleCmd)
+		assert.Equal(t, "🔊 SoundCloud TUI", fmt.Sprint(titleCmd()))
+	})
+
+	for _, state := range []audio.PlayerState{audio.StatePaused, audio.StateStopped} {
+		t.Run(state.String(), func(t *testing.T) {
+			application, audioPlayer := newApplication()
+			audioPlayer.state = audio.StatePlaying
+			updated, playingTitleCmd := application.Update(player.PlaybackStartedMsg{})
+			application = updated.(*app.App)
+			require.NotNil(t, playingTitleCmd)
+
+			audioPlayer.state = state
+			updated, titleCmd := application.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+			application = updated.(*app.App)
+			require.NotNil(t, titleCmd)
+			assert.Equal(t, "SoundCloud TUI", fmt.Sprint(titleCmd()))
 		})
 	}
 }

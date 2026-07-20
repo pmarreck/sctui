@@ -1,22 +1,22 @@
 # Implementation Plan for Open-Source SoundCloud TUI Client in Go
 
-## Current Work: Player Tab Playback Indicator (2026-07-20 EDT)
+## Current Work: Terminal Playback Indicator (2026-07-20 EDT)
 
-Goal: make active SoundCloud playback visible in the Player navigation tab.
+Goal: make active SoundCloud playback visible in the terminal tab title.
 
 Done criteria:
-- [x] The Player tab reads `🔊 Player` only while the audio backend reports
-  active playback.
-- [x] The expanded playing-tab label and its mouse hit target share the same
-  source of truth.
+- [x] Bubble Tea emits the OSC terminal title `🔊 SoundCloud TUI` only while
+  the audio backend reports active playback.
+- [x] The title returns to `SoundCloud TUI` when playback pauses or stops.
+- [x] The in-app navigation labels remain unchanged.
 - [x] `./test` and `./build` pass before commit.
-  Completed 2026-07-20 14:55 EDT.
+  Completed 2026-07-20 16:09 EDT.
 
 Next small behavior:
-- [x] Render the Player label from the audio state and use it for tab hit
-  testing.
-  Curiosity poke: can adding a dynamic label make the final Player tab columns
-  select the adjacent Playlists tab?
+- [x] Synchronize the terminal title after Bubble Tea initialization and only
+  when playback state changes.
+  Curiosity poke: can title synchronization alter existing commands in tests
+  that intentionally call `Update` before `Init`?
 
 ## Current Work: Mechatron Prime CI (2026-07-17 EDT)
 

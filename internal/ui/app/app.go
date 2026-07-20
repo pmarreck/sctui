@@ -35,6 +35,9 @@ const (
 	ViewFavorites
 )
 
+const terminalTitle = "SoundCloud TUI"
+const playingTerminalTitle = "🔊 " + terminalTitle
+
 // String returns the string representation of ViewType
 func (v ViewType) String() string {
 	switch v {
@@ -136,6 +139,8 @@ type App struct {
 	audioPlayer      audio.Player
 	streamExtractor  audio.StreamExtractor
 	authNotice       string
+	terminalTitleInitialized bool
+	currentTerminalTitle     string
 
 	// Library tab state
 	playlistsState         loadState
@@ -234,15 +239,31 @@ func renderAuthNotice(client SoundCloudClient) string {
 
 // Init initializes the application
 func (a *App) Init() tea.Cmd {
+	a.terminalTitleInitialized = true
 	return tea.Batch(
 		a.searchComponent.Init(),
 		a.playerComponent.Init(),
+		a.syncTerminalTitle(),
 	)
 }
 
 // Update handles messages and updates the application state
-func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 	var cmds []tea.Cmd
+	defer func() {
+		if !a.terminalTitleInitialized {
+			return
+		}
+		titleCmd := a.syncTerminalTitle()
+		if titleCmd == nil {
+			return
+		}
+		if cmd == nil {
+			cmd = titleCmd
+			return
+		}
+		cmd = tea.Batch(cmd, titleCmd)
+	}()
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
@@ -497,11 +518,12 @@ func (a *App) renderHeader() string {
 
 	// Navigation tabs
 	tabs := []string{}
-	for _, view := range []ViewType{ViewSearch, ViewPlayer, ViewPlaylists, ViewFavorites} {
+	for i, viewName := range []string{"Search", "Player", "Playlists", "Favorites"} {
+		view := ViewType(i)
 		if view == a.currentView {
-			tabs = append(tabs, styles.ActiveTabStyle.Render(a.tabLabel(view)))
+			tabs = append(tabs, styles.ActiveTabStyle.Render(viewName))
 		} else {
-			tabs = append(tabs, styles.InactiveTabStyle.Render(a.tabLabel(view)))
+			tabs = append(tabs, styles.InactiveTabStyle.Render(viewName))
 		}
 	}
 
@@ -518,22 +540,18 @@ func (a *App) renderHeader() string {
 	return styles.HeaderStyle.Render(header)
 }
 
-func (a *App) tabLabel(view ViewType) string {
-	switch view {
-	case ViewSearch:
-		return "Search"
-	case ViewPlayer:
-		if a.audioPlayer != nil && a.audioPlayer.GetState() == audio.StatePlaying {
-			return "🔊 Player"
-		}
-		return "Player"
-	case ViewPlaylists:
-		return "Playlists"
-	case ViewFavorites:
-		return "Favorites"
-	default:
-		return ""
+// syncTerminalTitle keeps the terminal tab title in sync with the audio backend
+// without emitting duplicate OSC title commands during ordinary TUI updates.
+func (a *App) syncTerminalTitle() tea.Cmd {
+	title := terminalTitle
+	if !a.quitting && a.audioPlayer != nil && a.audioPlayer.GetState() == audio.StatePlaying {
+		title = playingTerminalTitle
 	}
+	if title == a.currentTerminalTitle {
+		return nil
+	}
+	a.currentTerminalTitle = title
+	return tea.SetWindowTitle(title)
 }
 
 // renderFooter renders the application footer
@@ -1042,10 +1060,10 @@ func (a *App) tabAt(x, y int) (ViewType, bool) {
 		return ViewSearch, false
 	}
 	start := 0
-	for _, view := range []ViewType{ViewSearch, ViewPlayer, ViewPlaylists, ViewFavorites} {
-		width := lipgloss.Width(styles.InactiveTabStyle.Render(a.tabLabel(view)))
+	for i, name := range []string{"Search", "Player", "Playlists", "Favorites"} {
+		width := lipgloss.Width(styles.InactiveTabStyle.Render(name))
 		if x >= start && x < start+width {
-			return view, true
+			return ViewType(i), true
 		}
 		start += width
 	}
