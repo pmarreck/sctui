@@ -26,13 +26,20 @@ This application uses SoundCloud's undocumented internal API through a reverse-e
 - **Real audio playback** using Beep plus ffmpeg-backed HLS decoding
 - **Search and browse** SoundCloud tracks
 - **Player controls** (play/pause, seek, volume)
-- **Silent Firefox session login** for personal/private SoundCloud library access
-- **Personal playlists and favorites tabs** with interactive track playback
-- **Visible collection recovery** that highlights skipped tracks' successors and shows the failure reason
+- **Silent Firefox session login**: detects an existing SoundCloud browser session without a separate login flow
+- **Personal library**: loads owned, liked, followed, and private playlists plus favorite tracks
+- **Playlist navigation**: enter a playlist with Right/Enter or a double-click; return with Left/Esc
+- **F5 library refresh**: refetches playlists and Favorites and refreshes the opened playlist's tracks when loaded
+- **Collection playback**: Shift+Left/Right moves through a playlist or Favorites; completion advances automatically
+- **Visible collection recovery**: highlights skipped tracks' successors and shows why an unavailable track was skipped
+- **Mouse support**: click tabs and items, double-click to open/play, and use the wheel to move library selections
+- **Terminal playback title**: the terminal title becomes `🔊 SoundCloud TUI` while audio is playing
+- **Robust stream selection**: resolves current SoundCloud transcodings, private signed streams, and reports DRM-only media clearly
 - **Progress tracking** with smooth progress bars
 - **Global hotkeys** (Space, ←→, +/-) work from any view
 - **Track completion** handling with replay functionality
-- **CLI mode** for search and track info
+- **CLI mode** for search, track info, playback, identity, and playlist listing
+- **Reproducible Nix builds and tests** with Mechatron Prime exact-commit CI
 
 🎵 **TUI Navigation:**
 - **Tab/Shift+Tab**: Switch between Search/Player/Playlists/Favorites views
@@ -40,32 +47,39 @@ This application uses SoundCloud's undocumented internal API through a reverse-e
 - **Player View**: Space (play/pause), ←→ (seek 10s), Shift+←→ (previous/next track for playlists and Favorites), +/- (volume)
 - **Playlists View**: ↑↓ to navigate, →/Enter to open a playlist or play a track, ←/Esc to go back
 - **Favorites View**: ↑↓ to navigate liked tracks, Enter to play
+- **F5**: Refresh personal playlists, Favorites, and an opened playlist's tracks
 - **Global Controls**: Audio controls work from any view
 
 🚧 **Coming Soon:**
-- Queue management
+- Explicit queue management
 - Enhanced metadata display
 
 ## Installation
 
 ### Prerequisites
-- Go 1.21 or later
+- [Nix](https://nixos.org/download/) with flakes enabled
 - ffmpeg (required for current SoundCloud AAC/HLS streams; Nix builds wrap it automatically)
-- Audio system (ALSA/PulseAudio on Linux, Core Audio on macOS, DirectSound on Windows)
+- Audio system (ALSA/PulseAudio on Linux or Core Audio on macOS)
+
+The packaged Nix build currently declares Unix platforms. Native Windows
+packaging is not part of this fork's supported release path yet.
 
 ### Build from Source
 
 ```bash
 # Clone the repository
-git clone <repository-url>
-cd soundcloud-tui
+git clone https://github.com/pmarreck/sctui.git
+cd sctui
 
-# Install dependencies
-make deps
+# Build the reproducible, wrapped binary
+./build
 
-# Build the application
-make build
+# Run the complete hermetic test suite
+./test
 ```
+
+`./build` writes the runnable binary to `bin/sctui`. It includes `ffmpeg` and
+`sqlite3` in its runtime PATH for HLS decoding and browser-session discovery.
 
 ## Usage
 
@@ -84,6 +98,13 @@ Launches the full interactive Terminal UI with audio playback capabilities.
 # Get track information
 ./bin/sctui --track "https://soundcloud.com/artist/track"
 
+# Play a track directly
+./bin/sctui --play "https://soundcloud.com/artist/track"
+
+# Inspect the detected SoundCloud session and list your playlists
+./bin/sctui --whoami
+./bin/sctui --playlists
+
 # Show help
 ./bin/sctui --help
 ```
@@ -99,6 +120,7 @@ Launches the full interactive Terminal UI with audio playback capabilities.
   - ←/Esc to return from playlist tracks to the playlist list
 - **Favorites View**:
   - ↑↓ to navigate liked tracks, Enter to play
+- **F5**: Refresh playlists, Favorites, and the currently opened playlist
 - **Global Audio Controls** (work from any view):
   - **Space**: Play/Pause
   - **←→**: Seek backward/forward (10 seconds)
@@ -109,20 +131,17 @@ Launches the full interactive Terminal UI with audio playback capabilities.
   - Click a playlist or track to select it
   - Double-click a playlist to open it, or a track to play it
   - Scroll to move the active playlist or track selection
-- **Ctrl+C/Ctrl+Q**: Quit application
+- **Ctrl+C/Q**: Quit application
 
 ## Development
 
-### Available Make Commands
+### Build and Test Commands
 
 ```bash
-make build       # Build the main application
-make build-test  # Build test utilities
-make test        # Run all tests
-make clean       # Remove build artifacts
-make run         # Build and run example search
-make deps        # Install dependencies
-make help        # Show available commands
+./build          # Reproducible Nix package build; writes bin/sctui
+./test           # Full hermetic Nix test suite, matching Mechatron CI
+nix run          # Build and launch the TUI without staging bin/sctui
+nix develop      # Enter a Go, ffmpeg, sqlite3, and audio development shell
 ```
 
 ### Project Structure
@@ -141,9 +160,8 @@ internal/
 ├── api/            # Legacy OAuth code (unused)
 └── config/         # Configuration management
 tests/
-├── unit/           # Component unit tests
-├── integration/    # API integration tests
-└── e2e/            # End-to-end tests
+└── unit/           # Audio and TUI unit tests
+.mechatron-prime/   # Exact-commit Nix targets for Mechatron Prime CI
 notes/              # Planning and documentation
 bin/                # Build artifacts (gitignored)
 ```
@@ -153,11 +171,11 @@ bin/                # Build artifacts (gitignored)
 We follow Test-Driven Development (TDD) principles:
 
 ```bash
-# Run all tests
-make test
+# Run the same full test derivation used by CI
+./test
 
-# Run tests with coverage
-go test -cover ./...
+# Work inside the project development shell when invoking Go directly
+nix develop -c go test -cover ./...
 ```
 
 ## Technical Architecture
@@ -166,6 +184,7 @@ go test -cover ./...
 - **Beep Library**: High-performance audio playback with seekable streamers
 - **AAC/HLS Decoding**: Current SoundCloud HLS streams decode through ffmpeg into in-memory stereo PCM
 - **Progressive Fallback**: Older MP3/WAV URLs still use the direct HTTP decoder path
+- **Buffered Seeking**: Fully decoded HLS PCM permits stable seeks and collection track changes
 - **DRM Detection**: Major-label SoundCloud+ tracks that only expose FairPlay/Widevine/PlayReady HLS are reported as unsupported instead of surfacing a misleading media 404
 - **Real-time Position Tracking**: 250ms update intervals for smooth progress
 - **Thread-safe Player**: Concurrent-safe with proper mutex locking
@@ -175,10 +194,11 @@ go test -cover ./...
 - **Component Architecture**: Modular player, search, and navigation components
 - **Global State Management**: Centralized app state with component communication
 - **Responsive Design**: Adapts to terminal size changes
+- **Library Views**: Bounded list rendering keeps headers and controls visible for long playlists and Favorites
 
 ### SoundCloud Integration  
 - **Reverse-engineered API**: Uses `github.com/zackradisic/soundcloud-api`
-- **No Official Credentials**: Works without API keys or authentication
+- **Browser Session Detection**: Reads an existing Firefox SoundCloud session when available, otherwise browses anonymously
 - **Real Stream URLs**: Prefers HLS CDN URLs, with progressive fallback
 - **CloudFront Authentication**: Handles signed URL parameters
 
@@ -196,10 +216,11 @@ go test -cover ./...
 - Volume and seeking controls
 
 **Phase 3: Enhanced Experience** 🚧
-- Personal playlists and favorites
-- Queue management
+- Personal playlists and Favorites ✅
+- Collection playback and automatic recovery ✅
+- Explicit queue management
 - Advanced metadata display
-- Improved error handling
+- Further playback diagnostics
 
 ## Contributing
 
@@ -213,7 +234,7 @@ This is an educational project demonstrating TUI development and audio programmi
 
 ### Development Guidelines
 - Follow TDD principles - write tests first
-- Use the Makefile for all build operations
+- Use `./build` and `./test` for the reproducible build and full test suite
 - Update CLAUDE.md for any new commands or workflows
 - Ensure changes work across platforms (Linux/macOS/Windows)
 - Include appropriate error handling and user feedback
@@ -223,7 +244,7 @@ This is an educational project demonstrating TUI development and audio programmi
 2. Create a feature branch: `git checkout -b feature/my-feature`
 3. Write tests for your changes
 4. Implement your feature
-5. Ensure all tests pass: `make test`
+5. Ensure all tests pass: `./test`
 6. Submit a pull request
 
 Please ensure all changes include appropriate tests and documentation.
@@ -238,12 +259,13 @@ Please ensure all changes include appropriate tests and documentation.
   pulseaudio --check  # Check PulseAudio status
   ```
 - **macOS**: Should work out of the box with Core Audio
-- **Windows**: Requires DirectSound (usually pre-installed)
+- **Windows**: Native packaging is not currently supported; use a Unix host or
+  contribute a tested Windows release path.
 
 ### Build Issues
-- **Missing dependencies**: Run `make deps` to install Go modules
-- **Permission errors**: Ensure Go workspace has write permissions
-- **Network issues**: Some dependencies require internet access
+- **Nix daemon unavailable**: Start `nix-daemon.service` and rerun `./build` or `./test`
+- **First build downloads dependencies**: Nix fetches its pinned inputs and Go module tree before the build can run offline
+- **Direct Go development**: Use `nix develop` so ffmpeg, sqlite3, and audio dependencies are available
 
 ### Runtime Issues
 - **TUI not displaying**: Ensure terminal supports 256 colors

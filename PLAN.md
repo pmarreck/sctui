@@ -1,5 +1,24 @@
 # Implementation Plan for Open-Source SoundCloud TUI Client in Go
 
+## Current Work: Fork Documentation Catch-up (2026-07-22 EDT)
+
+Goal: document the behavior this fork added beyond `barnabasJ/sctui` and make
+the documented development workflow match the reproducible Nix build.
+
+Done criteria:
+- [x] Review the fork delta for user-facing features, fixes, and documentation
+  drift.
+- [x] Update `README.md` with the personal-library, playback, navigation,
+  silent-login, and Nix/Mechatron behavior delivered by the fork.
+- [x] Run `./test` and `./build` before committing the final outstanding tree.
+  Completed 2026-07-22 11:05 EDT.
+
+Next small behavior:
+- [x] Replace stale Makefile-first instructions and the completed-library
+  roadmap with the actual scripts and current feature set.
+  Curiosity poke: does any documented platform claim conflict with the Nix
+  package metadata or an unavailable dependency?
+
 ## Current Work: Library Refresh Shortcut (2026-07-21 EDT)
 
 Goal: let the user explicitly refresh their SoundCloud library without leaving
