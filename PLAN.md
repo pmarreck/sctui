@@ -14,8 +14,8 @@ Done criteria:
   Completed 2026-07-22 11:05 EDT.
 
 Next small behavior:
-- [x] Replace stale Makefile-first instructions and the completed-library
-  roadmap with the actual scripts and current feature set.
+- [x] Add a dedicated fork-improvements summary, remove the missing demo
+  reference, and correct residual stale platform and roadmap claims.
   Curiosity poke: does any documented platform claim conflict with the Nix
   package metadata or an unavailable dependency?
 

@@ -4,8 +4,33 @@
 
 A Terminal User Interface for SoundCloud written in Go, featuring real audio playback and interactive controls.
 
-![SoundCloud TUI Demo](docs/demo.gif)
-*Search, play, and control SoundCloud tracks directly from your terminal*
+Search, play, and control SoundCloud tracks directly from your terminal.
+
+## What This Fork Adds
+
+This fork turns the original anonymous search-and-play TUI into a more capable
+personal SoundCloud client with reproducible builds and resilient playback.
+
+- **Personal-account library**: silently reuses a logged-in Firefox SoundCloud
+  session, exposes identity and playlist CLI commands, and adds in-TUI
+  Playlists and Favorites tabs. Playlist hydration handles large collections.
+- **Library workflow**: keyboard and mouse selection, double-click open/play,
+  wheel navigation, fixed TUI chrome for long lists, and `F5` refreshes without
+  leaving the current view.
+- **Modern stream playback**: direct transcoding resolution, signed private
+  streams, ffmpeg AAC/HLS decoding into seekable PCM, and a buffered fallback
+  for progressive media. DRM-only streams fail with a useful explanation.
+- **Collection behavior**: Shift+Left/Right track navigation, automatic
+  end-of-track advance, and visible retry/skip feedback when a collection item
+  cannot play.
+- **Interaction refinements**: searches accept spaces, Ctrl+Q quits, playback
+  changes the terminal title, regular arrows retain 10-second seeking, and
+  CLI long flags use GNU-style double dashes with single-letter aliases.
+- **Reliability fixes**: interrupted playback is stopped before resolving the
+  next track; short completed downloads preload correctly; seeking no longer
+  self-deadlocks or resets playback position.
+- **Reproducible delivery**: Nix supplies the build, test, ffmpeg, sqlite3,
+  and audio dependencies; Mechatron Prime builds the exact pushed commit.
 
 ## ⚠️ Important Disclaimer
 
@@ -230,13 +255,15 @@ This is an educational project demonstrating TUI development and audio programmi
 - **Test coverage**: Expand unit and integration test coverage  
 - **Documentation**: Improve guides and API documentation
 - **Performance optimizations**: Audio streaming and UI responsiveness improvements
-- **New features**: Queue management, playlists, enhanced metadata
+- **New features**: Explicit queue management, enhanced metadata, and a tested
+  Windows packaging path
 
 ### Development Guidelines
 - Follow TDD principles - write tests first
 - Use `./build` and `./test` for the reproducible build and full test suite
 - Update CLAUDE.md for any new commands or workflows
-- Ensure changes work across platforms (Linux/macOS/Windows)
+- Ensure changes work on the supported Unix package platforms; add a tested
+  release path before claiming another platform
 - Include appropriate error handling and user feedback
 
 ### Getting Started
