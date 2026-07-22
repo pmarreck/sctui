@@ -1,5 +1,24 @@
 # Implementation Plan for Open-Source SoundCloud TUI Client in Go
 
+## Current Work: Library Refresh Shortcut (2026-07-21 EDT)
+
+Goal: let the user explicitly refresh their SoundCloud library without leaving
+the current TUI context.
+
+Done criteria:
+- [x] `F5` reloads playlists and favorites from the logged-in account.
+- [x] `F5` also reloads the currently opened playlist's tracks when they are
+  already loaded.
+- [x] The footer documents the refresh shortcut and condenses global navigation
+  and quit hints as requested.
+- [x] Focused regression tests, `./test`, and `./build` pass before commit.
+  Completed 2026-07-22 08:29 EDT.
+
+Next small behavior:
+- [x] Add failing tests for batched library refresh and concise footer help.
+  Curiosity poke: can an in-flight request be needlessly duplicated or a
+  refreshed playlist lose the current tracks view?
+
 ## Current Work: Terminal Playback Indicator (2026-07-20 EDT)
 
 Goal: make active SoundCloud playback visible in the terminal tab title.

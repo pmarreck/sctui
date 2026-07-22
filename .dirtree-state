@@ -15,9 +15,9 @@ annotate=[
 	internal/soundcloud/client.go = SoundCloud api-v2 client for auth, library playlists/favorites, playlist hydration, and media URL resolution
 	internal/soundcloud/client_test.go = fixture tests for playlists, favorites, large playlist hydration, and transcoding media URL resolution
 	internal/soundcloud/live_debug_test.go = Env-gated live SoundCloud transcoding metadata debug probe with URL/key redaction.
-	internal/ui/app/app.go = Coordinates TUI navigation, playback state, library views, and terminal-title synchronization.
+	internal/ui/app/app.go = Coordinates TUI navigation, playback state, library views, terminal-title synchronization, and F5 library refreshes.
 	internal/ui/components/search/search.go = Search state machine and renderer; accepts Bubble Tea KeySpace explicitly in text input.
 	test = Canonical full-suite runner for the same hermetic Nix test derivation used by Mechatron Prime.
 	tests/unit/audio/ffmpeg_hls_decoder_test.go = tests ffmpeg HLS command construction, PCM output, and URL-redacted errors
-	tests/unit/ui/app_test.go = Exercises application navigation, playback, library, mouse, layout, header, and terminal-title behavior.
+	tests/unit/ui/app_test.go = Exercises application navigation, playback, library refresh, mouse, layout, header, footer, and terminal-title behavior.
 ]

@@ -211,7 +211,7 @@ func TestApp_Navigation(t *testing.T) {
 func TestApp_QuitHandling(t *testing.T) {
 	for _, key := range []tea.KeyType{tea.KeyCtrlC, tea.KeyCtrlQ} {
 		application := app.NewApp()
-		assert.Contains(t, application.View(), "Ctrl+C/Ctrl+Q: Quit")
+		assert.Contains(t, application.View(), "Ctrl+C/Q: Quit")
 		updatedApp, cmd := application.Update(tea.KeyMsg{Type: key})
 
 		newApp := updatedApp.(*app.App)
@@ -400,6 +400,78 @@ func TestApp_PlaylistsTabRightAndLeftDrillIntoPlaylist(t *testing.T) {
 	view := application.View()
 	assert.Contains(t, view, "Samson likes")
 	assert.NotContains(t, view, "Playlist Track")
+}
+
+func TestApp_F5RefreshesLibraryAndOpenedPlaylistTracks(t *testing.T) {
+	libraryCalls := 0
+	favoriteCalls := 0
+	playlistTrackCalls := 0
+	application := app.NewAppWithDependencies(
+		&MockSoundCloudClient{
+			LibraryFunc: func() ([]soundcloud.Playlist, error) {
+				libraryCalls++
+				return []soundcloud.Playlist{{ID: 10, Title: "Refresh me"}}, nil
+			},
+			FavoritesFunc: func() ([]soundcloud.Track, error) {
+				favoriteCalls++
+				return []soundcloud.Track{{ID: int64(favoriteCalls), Title: fmt.Sprintf("Favorite %d", favoriteCalls)}}, nil
+			},
+			PlaylistFunc: func(playlistID int64) ([]soundcloud.Track, error) {
+				assert.Equal(t, int64(10), playlistID)
+				playlistTrackCalls++
+				return []soundcloud.Track{{ID: int64(playlistTrackCalls), Title: fmt.Sprintf("Playlist Track %d", playlistTrackCalls)}}, nil
+			},
+		},
+		&MockAudioPlayer{},
+		&MockStreamExtractor{},
+	)
+
+	updated, _ := application.Update(tea.KeyMsg{Type: tea.KeyTab})
+	application = updated.(*app.App)
+	updated, loadPlaylistsCmd := application.Update(tea.KeyMsg{Type: tea.KeyTab})
+	application = updated.(*app.App)
+	require.NotNil(t, loadPlaylistsCmd)
+	updated, _ = application.Update(loadPlaylistsCmd())
+	application = updated.(*app.App)
+
+	updated, loadTracksCmd := application.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	application = updated.(*app.App)
+	require.NotNil(t, loadTracksCmd)
+	updated, _ = application.Update(loadTracksCmd())
+	application = updated.(*app.App)
+	require.Equal(t, 1, libraryCalls)
+	require.Equal(t, 1, playlistTrackCalls)
+
+	updated, refreshCmd := application.Update(tea.KeyMsg{Type: tea.KeyF5})
+	application = updated.(*app.App)
+	require.NotNil(t, refreshCmd)
+	batch, ok := refreshCmd().(tea.BatchMsg)
+	require.True(t, ok)
+	require.Len(t, batch, 3)
+	for _, command := range batch {
+		updated, _ = application.Update(command())
+		application = updated.(*app.App)
+	}
+
+	assert.Equal(t, 2, libraryCalls)
+	assert.Equal(t, 1, favoriteCalls)
+	assert.Equal(t, 2, playlistTrackCalls)
+	assert.Contains(t, application.View(), "Playlist Track 2")
+}
+
+func TestApp_FooterUsesCompactGlobalHelp(t *testing.T) {
+	application := app.NewAppWithDependencies(
+		&MockSoundCloudClient{},
+		&MockAudioPlayer{},
+		&MockStreamExtractor{},
+	)
+
+	view := application.View()
+	assert.Contains(t, view, "[Shift-]Tab: [Previous/]Next View")
+	assert.Contains(t, view, "F5: Refresh Library")
+	assert.Contains(t, view, "Ctrl+C/Q: Quit")
+	assert.NotContains(t, view, "Tab: Next View")
+	assert.NotContains(t, view, "Ctrl+C/Ctrl+Q: Quit")
 }
 
 func TestApp_PlaylistsTabWindowsManyPlaylistsAroundSelection(t *testing.T) {

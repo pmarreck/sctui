@@ -273,6 +273,9 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 			a.quitting = true
 			return a, tea.Quit
 
+		case tea.KeyF5:
+			return a, a.refreshLibraryCmd()
+
 		case tea.KeyTab:
 			a.nextView()
 			return a, a.activateCurrentView()
@@ -556,7 +559,7 @@ func (a *App) syncTerminalTitle() tea.Cmd {
 
 // renderFooter renders the application footer
 func (a *App) renderFooter() string {
-	helpText := "Tab: Next View • Shift+Tab: Previous View • Ctrl+C/Ctrl+Q: Quit"
+	helpText := "[Shift-]Tab: [Previous/]Next View • F5: Refresh Library • Ctrl+C/Q: Quit"
 
 	// Add global audio controls (work from any view)
 	if a.playerComponent.GetCurrentTrack() != nil {
@@ -601,6 +604,22 @@ func (a *App) activateCurrentView() tea.Cmd {
 		}
 	}
 	return nil
+}
+
+// refreshLibraryCmd refetches account collections while preserving the opened
+// playlist view, avoiding duplicate requests that are already in flight.
+func (a *App) refreshLibraryCmd() tea.Cmd {
+	cmds := make([]tea.Cmd, 0, 3)
+	if a.playlistsState != loadLoading {
+		cmds = append(cmds, a.loadPlaylistsCmd())
+	}
+	if a.favoritesState != loadLoading {
+		cmds = append(cmds, a.loadFavoritesCmd())
+	}
+	if a.playlistTracksState == loadLoaded && a.selectedPlaylist != nil {
+		cmds = append(cmds, a.loadPlaylistTracksCmd(*a.selectedPlaylist))
+	}
+	return tea.Batch(cmds...)
 }
 
 func (a *App) loadPlaylistsCmd() tea.Cmd {
