@@ -66,6 +66,22 @@ func TestLiveDebugTrackTranscodings(t *testing.T) {
 	}
 }
 
+func TestRedactKeyTag_RedactsRawProtectionData(t *testing.T) {
+	const protectionData = "AAAAa3Bzc2gAAAAA7e+LqXnWSs6jyCfc1R0h7QAAAEs"
+	input := "#EXT-X-KEY:METHOD=SAMPLE-AES-CTR,URI=\"https://license.example.test/playback?token=secret\"," + protectionData + ",KEYID=key-id,KEYFORMAT=\"urn:uuid:edef8ba9-79d6-4ace-a3c8-27dcd51d21ed\""
+
+	got := redactKeyTag(input)
+	if strings.Contains(got, protectionData) {
+		t.Fatalf("redactKeyTag exposed raw protection data: %q", got)
+	}
+	if strings.Contains(got, "license.example.test") {
+		t.Fatalf("redactKeyTag exposed the license URL: %q", got)
+	}
+	if !strings.Contains(got, "KEYFORMAT=\"urn:uuid:edef8ba9-79d6-4ace-a3c8-27dcd51d21ed\"") {
+		t.Fatalf("redactKeyTag removed the safe key-system classification: %q", got)
+	}
+}
+
 func logPlaylistHeader(t *testing.T, client *Client, index int, playlistURL string) {
 	t.Helper()
 	httpClient := client.httpClient
@@ -128,10 +144,13 @@ func redactKeyTag(line string) string {
 	for i, attr := range attrs {
 		name, _, ok := strings.Cut(attr, "=")
 		if !ok {
+			attrs[i] = "[redacted]"
 			continue
 		}
 		switch strings.TrimSpace(name) {
-		case "URI", "IV", "KEYID":
+		case "METHOD", "KEYFORMAT", "KEYFORMATVERSIONS":
+			continue
+		default:
 			attrs[i] = name + "=[redacted]"
 		}
 	}

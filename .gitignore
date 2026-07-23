@@ -60,5 +60,7 @@ result-*
 # Per-machine agent symlinks (point outside the repo; never commit)
 AGENTS.md
 jj_cheatsheet.md
+# Per-session agent correspondence (local only)
+inbox/
 # session handoff docs (skill: handoff)
 HANDOFF*

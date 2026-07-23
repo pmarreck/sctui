@@ -1,5 +1,35 @@
 # Implementation Plan for Open-Source SoundCloud TUI Client in Go
 
+## Current Work: Protected Playback Architecture Spike (2026-07-23 EDT)
+
+Goal: determine whether representative SoundCloud+ tracks use a browser CDM/EME
+playback path or an ordinary authenticated streaming path, without extracting
+credentials, licenses, keys, encrypted media, or decoded audio.
+
+Done criteria:
+- [x] Classify `Bio-Mechanic` by Front Line Assembly and `I Wanna Be Adored
+  (Remastered 2009)` by The Stone Roses through the existing redacted live
+  diagnostics. Completed 2026-07-23 09:07 EDT.
+- [x] Run a browser-native observation that records only EME/CDM selection and
+  encrypted-media events for a candidate that enters the browser DRM path.
+  Completed 2026-07-23 09:12 EDT.
+- [x] Record the architectural conclusion and its implication for `sctui`'s
+  supported playback paths. Completed 2026-07-23 09:13 EDT.
+
+Next small behavior:
+- [x] Establish the two-track reproducible fixture set and capture the current
+  direct-client error shape.
+  Curiosity poke: could the apparent DRM failure instead be an expired or
+  entitlement-specific signed-stream response?
+  Completed 2026-07-23 09:07 EDT.
+- [x] Verify that a browser DRM attempt can advance to a later ordinary queue
+  item when the requested CDM configuration is unsupported.
+  Curiosity poke answered: SoundCloud's global player can change tracks after
+  the original target page has initiated EME negotiation.
+  Completed 2026-07-23 09:12 EDT.
+- [x] Ignore the per-session agent `inbox/` directory.
+  Completed 2026-07-23 09:02 EDT.
+
 ## Current Work: Fork Documentation Catch-up (2026-07-22 EDT)
 
 Goal: document the behavior this fork added beyond `barnabasJ/sctui` and make
