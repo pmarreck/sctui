@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -14,6 +15,7 @@ import (
 	"soundcloud-tui/internal/soundcloud"
 	"soundcloud-tui/internal/ui/app"
 	"soundcloud-tui/internal/ui/components/player"
+	"soundcloud-tui/internal/ui/styles"
 )
 
 func TestApp_NewApp(t *testing.T) {
@@ -703,6 +705,30 @@ func TestApp_MouseClicksTabsAndDoubleClicksLibraryItems(t *testing.T) {
 	assert.Equal(t, "Second", application.GetCurrentTrack().Title)
 }
 
+func TestApp_MouseMotionHighlightsTabWithoutSelectingIt(t *testing.T) {
+	colorProfile := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	t.Cleanup(func() { lipgloss.SetColorProfile(colorProfile) })
+
+	application := app.NewAppWithDependencies(
+		&MockSoundCloudClient{},
+		&MockAudioPlayer{},
+		&MockStreamExtractor{},
+	)
+	initialView := application.View()
+
+	updated, _ := application.Update(mouseMotion(14, 3))
+	application = updated.(*app.App)
+	assert.Equal(t, app.ViewSearch, application.GetCurrentView())
+	assert.NotEqual(t, initialView, application.View())
+	assert.Contains(t, application.View(), styles.HoveredTabStyle.Render("Player"))
+
+	updated, _ = application.Update(mouseMotion(79, 7))
+	application = updated.(*app.App)
+	assert.Equal(t, app.ViewSearch, application.GetCurrentView())
+	assert.Equal(t, initialView, application.View())
+}
+
 func TestApp_MouseWheelNavigatesFavoritesAndPlaylistTracks(t *testing.T) {
 	tracks := []soundcloud.Track{
 		{ID: 1, Title: "First", User: soundcloud.User{Username: "Artist"}},
@@ -785,6 +811,10 @@ func TestApp_LongContentFitsBelowHeaderAndAboveFooter(t *testing.T) {
 
 func mousePress(x, y int) tea.MouseMsg {
 	return tea.MouseMsg{X: x, Y: y, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress}
+}
+
+func mouseMotion(x, y int) tea.MouseMsg {
+	return tea.MouseMsg{X: x, Y: y, Action: tea.MouseActionMotion}
 }
 
 func wheelDown() tea.MouseMsg {

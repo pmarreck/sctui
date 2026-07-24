@@ -1,5 +1,31 @@
 # Implementation Plan for Open-Source SoundCloud TUI Client in Go
 
+## Current Work: Tab Hover Highlight (2026-07-24 EDT)
+
+Goal: give tabs a subtle rollover state in terminals that support all-motion
+mouse reporting, without changing the active view until an explicit click or
+keyboard action.
+
+Done criteria:
+- [x] Passive mouse movement over an inactive tab renders a distinct subtle
+  hover state.
+- [x] Moving off the tab clears the hover state and does not alter the active
+  view.
+- [x] The title band and header separator use the terminal's full current
+  width.
+- [x] The TUI requests all-motion mouse events and focused tests, `./test`,
+  and `./build` pass before commit. Completed 2026-07-24 00:58 EDT.
+
+Next small behavior:
+- [x] Route passive mouse motion through tab hit testing and render only the
+  hovered inactive tab with a stable-width style.
+  Curiosity poke: does changing styles alter the tab hit boxes or make a
+  normal mouse exit leave stale highlighting?
+- [x] Render header chrome at the terminal width rather than its historical
+  80-column width.
+  Curiosity poke answered: the fixed four-tab bar defines a 50-column minimum;
+  narrower responsive navigation is separate work.
+
 ## Current Work: Protected Playback Architecture Spike (2026-07-23 EDT)
 
 Goal: determine whether representative SoundCloud+ tracks use a browser CDM/EME

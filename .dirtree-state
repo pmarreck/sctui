@@ -17,6 +17,7 @@ annotate=[
 	internal/soundcloud/client_test.go = fixture tests for playlists, favorites, large playlist hydration, and transcoding media URL resolution
 	internal/soundcloud/live_debug_test.go = Env-gated live SoundCloud transcoding metadata debug probe with URL/key redaction.
 	internal/ui/app/app.go = Coordinates TUI navigation, playback state, library views, terminal-title synchronization, and F5 library refreshes.
+	internal/ui/app/header_test.go = Covers title band and header separator width across supported terminal widths.
 	internal/ui/components/search/search.go = Search state machine and renderer; accepts Bubble Tea KeySpace explicitly in text input.
 	notes/protected-playback-architecture-spike.md = Records the bounded Firefox EME/CDM observation and direct encrypted-HLS classification for SoundCloud+ tracks.
 	test = Canonical full-suite runner for the same hermetic Nix test derivation used by Mechatron Prime.

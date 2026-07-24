@@ -144,7 +144,7 @@ func main() {
 
 	// Start TUI application
 	application := app.NewApp()
-	program := tea.NewProgram(application, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	program := tea.NewProgram(application, tea.WithAltScreen(), tea.WithMouseAllMotion())
 
 	if _, err := program.Run(); err != nil {
 		log.Fatalf("Failed to start TUI: %v", err)

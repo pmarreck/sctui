@@ -127,18 +127,20 @@ type App struct {
 	height int
 
 	// Current view
-	currentView ViewType
-	quitting    bool
+	currentView   ViewType
+	quitting      bool
+	hoveredTab    ViewType
+	hasHoveredTab bool
 
 	// Components
 	searchComponent *search.SearchComponent
 	playerComponent *player.PlayerComponent
 
 	// Dependencies
-	soundCloudClient SoundCloudClient
-	audioPlayer      audio.Player
-	streamExtractor  audio.StreamExtractor
-	authNotice       string
+	soundCloudClient         SoundCloudClient
+	audioPlayer              audio.Player
+	streamExtractor          audio.StreamExtractor
+	authNotice               string
 	terminalTitleInitialized bool
 	currentTerminalTitle     string
 
@@ -516,7 +518,11 @@ func (a *App) View() string {
 
 // renderHeader renders the application header
 func (a *App) renderHeader() string {
-	title := styles.TitleStyle.Render("SoundCloud TUI")
+	headerWidth := a.width
+	if headerWidth < 1 {
+		headerWidth = 1
+	}
+	title := styles.TitleStyle.Copy().Width(headerWidth).Render("SoundCloud TUI")
 	auth := styles.StatusStyle.Render(a.authNotice)
 
 	// Navigation tabs
@@ -525,6 +531,8 @@ func (a *App) renderHeader() string {
 		view := ViewType(i)
 		if view == a.currentView {
 			tabs = append(tabs, styles.ActiveTabStyle.Render(viewName))
+		} else if a.hasHoveredTab && view == a.hoveredTab {
+			tabs = append(tabs, styles.HoveredTabStyle.Render(viewName))
 		} else {
 			tabs = append(tabs, styles.InactiveTabStyle.Render(viewName))
 		}
@@ -1011,6 +1019,11 @@ func (a *App) renderLibraryContent(title string, items []string) string {
 }
 
 func (a *App) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if msg.Action == tea.MouseActionMotion {
+		a.updateHoveredTab(msg.X, msg.Y)
+		return a, nil
+	}
+
 	switch msg.Button {
 	case tea.MouseButtonWheelUp:
 		return a.handleMouseWheel(-1)
@@ -1051,6 +1064,18 @@ func (a *App) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return a, nil
+}
+
+// updateHoveredTab keeps rollover visual-only: it follows the pointer but
+// never changes the active view or drives navigation.
+func (a *App) updateHoveredTab(x, y int) {
+	tab, ok := a.tabAt(x, y)
+	if !ok || tab == a.currentView {
+		a.hasHoveredTab = false
+		return
+	}
+	a.hoveredTab = tab
+	a.hasHoveredTab = true
 }
 
 // handleMouseWheel reuses the keyboard navigation paths so wheel scrolling
