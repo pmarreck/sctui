@@ -1,5 +1,66 @@
 # Implementation Plan for Open-Source SoundCloud TUI Client in Go
 
+## Current Work: Wheel Navigation Granularity (2026-07-24 EDT)
+
+Goal: make ordinary mouse-wheel navigation move one visible selection at a
+time, with Shift+wheel moving five selections at a time.
+
+Done criteria:
+- [x] A normal wheel event advances or reverses the active library selection
+  by exactly one row.
+- [x] Shift+wheel moves that selection by five rows, clamped at collection
+  bounds.
+- [x] Mouse motion and click behavior remain unchanged; focused tests,
+  `./test`, and `./build` pass before commit. Completed 2026-07-24 13:36 EDT.
+
+Next small behavior:
+- [x] Classify wheel events and translate their modifier state into the
+  existing list-navigation path. Bubble Tea exposes Shift directly and sctui
+  applies one selection per raw ordinary wheel report.
+  Curiosity poke: terminal-level duplicate reports cannot be distinguished
+  from deliberately rapid scrolling without lossy time-based coalescing.
+- [x] Process the FYI-only Mechatron Prime queue-watcher repair note and move
+  it out of the local inbox. Completed 2026-07-24 13:31 EDT.
+
+## Queued Work: Personal Library Filters (2026-07-24 EDT)
+
+Goal: let Peter narrow the Playlists and Favorites lists from a field at the
+top of each list.
+
+Done criteria:
+- [ ] Playlists and Favorites each render an editable filter field above their
+  current list content.
+- [ ] Filtering preserves keyboard, wheel, mouse, and playback behavior for
+  the matching visible items.
+- [ ] Entering playlist detail clears the top-level Playlists filter before
+  tracks render.
+- [ ] Empty-match and filter-clear states are deterministic and documented by
+  focused tests.
+
+Next small behavior:
+- [ ] Identify the current library renderer and input ownership boundaries.
+  Curiosity poke: should filtering match title only, or title plus creator and
+  playlist owner without confusing selection identity? Playlist detail always
+  clears the top-level filter rather than applying it to tracks.
+
+## Queued Work: Pointer Seek (2026-07-24 EDT)
+
+Goal: let Player-view clicks on the playback progress bar seek directly to the
+corresponding track position.
+
+Done criteria:
+- [ ] A click within the rendered progress-bar bounds seeks proportionally to
+  that bar's usable width.
+- [ ] Clicks outside the bar preserve existing Player interactions.
+- [ ] Edge clicks clamp precisely to the beginning and end of the known track
+  duration, with deterministic geometry tests.
+
+Next small behavior:
+- [ ] Identify the Player renderer's progress-bar bounds and existing seek
+  command boundary.
+  Curiosity poke: can a click before duration metadata arrives be rejected
+  without resetting active playback?
+
 ## Current Work: Tab Hover Highlight (2026-07-24 EDT)
 
 Goal: give tabs a subtle rollover state in terminals that support all-motion

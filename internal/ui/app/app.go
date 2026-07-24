@@ -99,6 +99,11 @@ const mouseDoubleClickWindow = 400 * time.Millisecond
 
 const autoAdvanceDelay = 500 * time.Millisecond
 
+const (
+	normalWheelStep = 1
+	shiftWheelStep  = 5
+)
+
 type mouseClick struct {
 	target libraryMouseTarget
 	index  int
@@ -1026,9 +1031,9 @@ func (a *App) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 	switch msg.Button {
 	case tea.MouseButtonWheelUp:
-		return a.handleMouseWheel(-1)
+		return a.handleMouseWheel(-mouseWheelStep(msg))
 	case tea.MouseButtonWheelDown:
-		return a.handleMouseWheel(1)
+		return a.handleMouseWheel(mouseWheelStep(msg))
 	}
 	if msg.Action != tea.MouseActionPress || msg.Button != tea.MouseButtonLeft {
 		return a, nil
@@ -1066,6 +1071,13 @@ func (a *App) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	return a, nil
 }
 
+func mouseWheelStep(msg tea.MouseMsg) int {
+	if msg.Shift {
+		return shiftWheelStep
+	}
+	return normalWheelStep
+}
+
 // updateHoveredTab keeps rollover visual-only: it follows the pointer but
 // never changes the active view or drives navigation.
 func (a *App) updateHoveredTab(x, y int) {
@@ -1078,25 +1090,36 @@ func (a *App) updateHoveredTab(x, y int) {
 	a.hasHoveredTab = true
 }
 
-// handleMouseWheel reuses the keyboard navigation paths so wheel scrolling
-// moves the active selection without acquiring click/double-click semantics.
+// handleMouseWheel reuses keyboard navigation so ordinary wheel events move one
+// item and modified events can page without duplicating collection semantics.
 func (a *App) handleMouseWheel(delta int) (tea.Model, tea.Cmd) {
 	key := tea.KeyDown
 	if delta < 0 {
 		key = tea.KeyUp
+		delta = -delta
 	}
-	message := tea.KeyMsg{Type: key}
-	switch a.currentView {
-	case ViewSearch:
-		updatedSearch, cmd := a.searchComponent.Update(message)
-		a.searchComponent = updatedSearch.(*search.SearchComponent)
-		return a, cmd
-	case ViewPlaylists:
-		return a, a.handlePlaylistsKey(message)
-	case ViewFavorites:
-		return a, a.handleFavoritesKey(message)
+
+	var cmds []tea.Cmd
+	for range delta {
+		message := tea.KeyMsg{Type: key}
+		switch a.currentView {
+		case ViewSearch:
+			updatedSearch, cmd := a.searchComponent.Update(message)
+			a.searchComponent = updatedSearch.(*search.SearchComponent)
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		case ViewPlaylists:
+			if cmd := a.handlePlaylistsKey(message); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		case ViewFavorites:
+			if cmd := a.handleFavoritesKey(message); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
 	}
-	return a, nil
+	return a, tea.Batch(cmds...)
 }
 
 func (a *App) tabAt(x, y int) (ViewType, bool) {

@@ -779,6 +779,42 @@ func TestApp_MouseWheelNavigatesFavoritesAndPlaylistTracks(t *testing.T) {
 	assert.Nil(t, application.GetCurrentTrack())
 }
 
+func TestApp_MouseWheelUsesOneRowNormallyAndFiveWithShift(t *testing.T) {
+	tracks := make([]soundcloud.Track, 8)
+	for i := range tracks {
+		tracks[i] = soundcloud.Track{ID: int64(i + 1), Title: fmt.Sprintf("Favorite %d", i+1)}
+	}
+	application := app.NewAppWithDependencies(
+		&MockSoundCloudClient{FavoritesFunc: func() ([]soundcloud.Track, error) { return tracks, nil }},
+		&MockAudioPlayer{},
+		&MockStreamExtractor{},
+	)
+
+	updated, cmd := application.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	application = updated.(*app.App)
+	require.NotNil(t, cmd)
+	updated, _ = application.Update(cmd())
+	application = updated.(*app.App)
+
+	updated, _ = application.Update(wheelDown())
+	application = updated.(*app.App)
+	assert.Contains(t, application.View(), "▶ Favorite 2")
+	updated, _ = application.Update(wheelUp())
+	application = updated.(*app.App)
+	assert.Contains(t, application.View(), "▶ Favorite 1")
+	updated, _ = application.Update(wheelDown())
+	application = updated.(*app.App)
+	assert.Contains(t, application.View(), "▶ Favorite 2")
+
+	updated, _ = application.Update(wheelDownWithShift())
+	application = updated.(*app.App)
+	assert.Contains(t, application.View(), "▶ Favorite 7")
+
+	updated, _ = application.Update(wheelDownWithShift())
+	application = updated.(*app.App)
+	assert.Contains(t, application.View(), "▶ Favorite 8")
+}
+
 func TestApp_LongContentFitsBelowHeaderAndAboveFooter(t *testing.T) {
 	tracks := make([]soundcloud.Track, 40)
 	for i := range tracks {
@@ -819,6 +855,14 @@ func mouseMotion(x, y int) tea.MouseMsg {
 
 func wheelDown() tea.MouseMsg {
 	return tea.MouseMsg{Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress}
+}
+
+func wheelUp() tea.MouseMsg {
+	return tea.MouseMsg{Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress}
+}
+
+func wheelDownWithShift() tea.MouseMsg {
+	return tea.MouseMsg{Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress, Shift: true}
 }
 
 func TestApp_ErrorHandling(t *testing.T) {
