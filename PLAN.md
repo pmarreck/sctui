@@ -1,5 +1,117 @@
 # Implementation Plan for Open-Source SoundCloud TUI Client in Go
 
+## Deferred TBD: Reusable TUI Text Input (2026-07-24 EDT)
+
+Goal: replace Search's hand-rolled query editing with a deterministic reusable
+text-input control, then use that control for the personal-library filters.
+
+Status: deferred to preserve Peter's remaining Codex budget. No implementation
+or dependency update is authorized until this becomes a priority again.
+
+Done criteria:
+- [ ] The control accepts UTF-8 text editing and reports every handled key plus
+  submit/clear/value-change state to its owning controller.
+- [ ] Focus and tab-order metadata are explicit; focused and blurred rendering
+  can use different configurable Lipgloss styles.
+- [ ] The control supports no-border, fixed-width, and bounded
+  percentage-of-terminal-width rendering without I/O or clock reads.
+- [ ] Search migrates without changing its established submit, clear, or
+  result-selection behavior.
+- [ ] Playlists and Favorites filters use the control rather than duplicating
+  text-editing logic.
+
+TBD design decision:
+- [ ] **A. Bubbles v0.20 adapter (recommended when resumed):** add the
+  maintained, Bubble Tea v1-compatible `textinput` control behind a small local
+  pure adapter that supplies parent event results, bounded percentage widths,
+  and configurable outer borders. Pros: Unicode editing, cursor positioning,
+  and overflow behavior are maintained upstream. Cons: a new dependency and a
+  small adapter remain necessary for this fork's contract.
+- [ ] **B. Fully local pure model:** implement editing and rendering in sctui.
+  Pros: no dependency and an exact minimal API. Cons: sctui owns mature Unicode
+  cursor, deletion, and overflow behavior already supplied by Bubbles.
+- [ ] **C. Bubble Tea v2 migration:** upstream is now v2.0.6, but this changes
+  import paths, `View`'s return type, key/mouse APIs, and terminal-feature
+  declaration across the entire app. Pros: current renderer and input protocol
+  support. Cons: disproportionate app-wide migration risk for this feature.
+  The actual UI surface is only four interactive tabs, boxes, a progress bar,
+  and lists, so do not reject this option on assumed complexity alone. When
+  resumed, start with a compile-only migration spike that counts the affected
+  interfaces and test changes before choosing it over the adapter.
+- [ ] Decide whether active Library filters keep text focus for cursor editing
+  or pass left/right arrows through to playlist navigation. The current product
+  requirement for right-arrow playlist entry makes automatic text focus a
+  meaningful interaction tradeoff.
+
+Resume point:
+- [ ] Define the control's pure configuration, width resolution, edit result,
+  and focus contract with failing unit tests.
+  Curiosity poke: can parent components schedule live/debounced filtering from
+  a key result without giving the input control asynchronous responsibilities?
+
+## Deferred TBD: Virtual Terminal Interaction Tests (2026-07-24 EDT)
+
+Goal: make scripted keyboard, mouse, text-input, and rendering interactions
+testable against `sctui`'s Bubble Tea model without a real terminal session.
+
+Status: deferred with the text-input work. The installed Bubble Tea v1.3.5
+offers `WithInput`, `WithOutput`, `WithoutRenderer`, and `Program.Send`, but
+does not provide a virtual-terminal test harness.
+
+Done criteria:
+- [ ] A deterministic test harness can drive an application model with scripted
+  key, mouse, and resize messages and expose the pure rendered frame after
+  each step.
+- [ ] The harness reuses Bubble Tea's supported test/headless API where it
+  covers the requirement and owns only the missing adapter logic.
+- [ ] Existing interaction tests migrate one representative keyboard, mouse,
+  and text-entry flow to the harness.
+- [ ] The harness rejects unsupported asynchronous commands explicitly rather
+  than hiding timing dependencies in tests.
+
+TBD design decision:
+- [ ] **A. Semantic scripted-model harness (recommended):** feed explicit
+  `tea.KeyMsg`, `tea.MouseMsg`, and `tea.WindowSizeMsg` values into
+  `Model.Update`, capture `View()` after each step, and reject asynchronous
+  commands unless a test provides an explicit deterministic executor. Pros:
+  fast, no escape-sequence parser, and directly tests sctui's behavior.
+  Cons: it does not test Bubble Tea's raw terminal input decoder.
+- [ ] **B. Raw virtual-terminal adapter:** use `Program` I/O and synthesize
+  terminal escape sequences before asserting rendered frames. Pros: covers raw
+  input decoding. Cons: asynchronous renderer behavior and terminal protocol
+  emulation add substantial complexity with little current product value.
+
+Resume point:
+- [ ] Audit the installed Bubble Tea testing and headless APIs before designing
+  a project harness.
+  Curiosity poke: can direct `Model.Update` calls give us all deterministic
+  semantics without emulating terminal escape-sequence parsing?
+
+## Deferred TBD: Bubble Tea Capability and Upgrade Audit (2026-07-24 EDT)
+
+Goal: determine whether a maintained Bubble Tea release or its official
+component ecosystem already provides the input control or deterministic
+interaction-testing support required by this fork.
+
+Audit result: Bubble Tea v2.0.6 is current, while sctui uses v1.3.5. The
+official Bubbles v0.20.0 package supplies a Bubble Tea v1-compatible
+`textinput` control. Its static-cursor mode can avoid timer-driven blink state,
+but it does not by itself provide sctui's requested parent event contract or
+percentage/bounded layout policy.
+
+Done criteria:
+- [ ] Compare the pinned Bubble Tea version with the current upstream release
+  and its official component packages using primary sources.
+- [ ] Record whether an update would replace local code or merely add API churn
+  and migration risk.
+- [ ] If an upgrade is justified, add a failing compatibility test and complete
+  the smallest supported update before building local equivalents.
+
+TBD decision:
+- [ ] Preserve the current Bubble Tea v1 pin until a separately scoped v2
+  migration proves its benefit. Revisit Bubbles v0.20.0 only when input work
+  resumes and option A above is selected.
+
 ## Current Work: Wheel Navigation Granularity (2026-07-24 EDT)
 
 Goal: make ordinary mouse-wheel navigation move one visible selection at a
@@ -22,10 +134,16 @@ Next small behavior:
 - [x] Process the FYI-only Mechatron Prime queue-watcher repair note and move
   it out of the local inbox. Completed 2026-07-24 13:31 EDT.
 
-## Queued Work: Personal Library Filters (2026-07-24 EDT)
+## Deferred TBD: Personal Library Filters (2026-07-24 EDT)
 
 Goal: let Peter narrow the Playlists and Favorites lists from a field at the
 top of each list.
+
+Status: deferred behind the input-control decision. The intended matching
+policy is case-insensitive playlist title/owner and favorite title/artist,
+while selection and playback retain original collection indices. Entering
+playlist detail clears the top-level playlist filter rather than filtering
+tracks.
 
 Done criteria:
 - [ ] Playlists and Favorites each render an editable filter field above their
@@ -39,9 +157,9 @@ Done criteria:
 
 Next small behavior:
 - [ ] Identify the current library renderer and input ownership boundaries.
-  Curiosity poke: should filtering match title only, or title plus creator and
-  playlist owner without confusing selection identity? Playlist detail always
-  clears the top-level filter rather than applying it to tracks.
+  Curiosity poke answered: match playlist title/owner and favorite title/artist
+  while retaining original collection indices. Playlist detail always clears
+  the top-level filter rather than applying it to tracks.
 
 ## Queued Work: Pointer Seek (2026-07-24 EDT)
 
