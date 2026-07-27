@@ -1067,6 +1067,19 @@ func (a *App) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 				return a, a.playCollectionTrack(a.favoriteTracks, index, collectionSourceFavorites)
 			}
 		}
+	case ViewPlayer:
+		if row, startX, width, ok := a.playerComponent.ProgressBarViewport(); ok {
+			barRow := lipgloss.Height(a.renderHeader()) + row
+			if msg.Y == barRow && msg.X >= startX && msg.X < startX+width {
+				fraction := 0.0
+				if width > 1 {
+					fraction = float64(msg.X-startX) / float64(width-1)
+				}
+				updatedPlayer, cmd := a.playerComponent.SeekToFraction(fraction)
+				a.playerComponent = updatedPlayer.(*player.PlayerComponent)
+				return a, cmd
+			}
+		}
 	}
 	return a, nil
 }
@@ -1238,4 +1251,11 @@ func (a *App) GetSize() (int, int) {
 
 func (a *App) GetCurrentTrack() *soundcloud.Track {
 	return a.playerComponent.GetCurrentTrack()
+}
+
+// PlayerComponent exposes the player sub-model. It is a seam for deterministic
+// tests (and future alternate frontends) that need to drive or inspect player
+// state directly, mirroring how the Bubble Tea Update loop owns it.
+func (a *App) PlayerComponent() *player.PlayerComponent {
+	return a.playerComponent
 }

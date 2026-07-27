@@ -23,4 +23,7 @@ annotate=[
 	test = Canonical full-suite runner for the same hermetic Nix test derivation used by Mechatron Prime.
 	tests/unit/audio/ffmpeg_hls_decoder_test.go = tests ffmpeg HLS command construction, PCM output, and URL-redacted errors
 	tests/unit/ui/app_test.go = Exercises application navigation, playback, library refresh, mouse, layout, header, footer, and terminal-title behavior.
+	tests/unit/ui/pointer_seek_app_test.go = Integration tests: left-click on rendered progress bar seeks; off-bar/other-view clicks do not (App handleMouse ViewPlayer wiring)
+	tests/unit/ui/pointer_seek_test.go = Unit tests for PlayerComponent.SeekToFraction (proportional/clamped/no-duration/nil-safe click-to-seek core)
+	tests/unit/ui/progress_bar_geometry_test.go = Oracle tests pinning PlayerComponent.ProgressBarViewport geometry to real rendered output across widths; hidden when not playing/compact
 ]

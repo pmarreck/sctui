@@ -431,6 +431,54 @@ func (p *PlayerComponent) seekForward() (tea.Model, tea.Cmd) {
 	}
 }
 
+// SeekToFraction seeks to a proportional position along the track, where
+// fraction 0.0 is the start and 1.0 is the end. It is the model behind
+// progress-bar click-to-seek: the app translates a click's horizontal offset
+// within the rendered bar into a fraction and calls this. Fractions outside
+// [0,1] clamp to the track bounds. With no known duration it is a no-op so a
+// stray click can never reset a live/undetermined-length stream to zero.
+func (p *PlayerComponent) SeekToFraction(fraction float64) (tea.Model, tea.Cmd) {
+	if p.audioPlayer == nil {
+		return p, nil
+	}
+
+	duration := p.duration
+	if duration <= 0 {
+		duration = p.audioPlayer.GetDuration()
+		p.duration = duration
+	}
+	if duration <= 0 {
+		return p, nil // unknown length: never seek, never reset playback
+	}
+
+	if fraction < 0 {
+		fraction = 0
+	}
+	if fraction > 1 {
+		fraction = 1
+	}
+	newPos := time.Duration(float64(duration) * fraction)
+	if newPos > duration {
+		newPos = duration
+	}
+	if newPos < 0 {
+		newPos = 0
+	}
+	// Update immediately so the bar reflects the click before the async seek
+	// completes, matching the ←/→ keyboard seek behavior.
+	p.position = newPos
+
+	return p, func() tea.Msg {
+		if err := p.audioPlayer.Seek(newPos); err != nil {
+			return fmt.Errorf("failed to seek: %w", err)
+		}
+		return ProgressUpdateMsg{
+			Position: p.audioPlayer.GetPosition(),
+			Duration: p.audioPlayer.GetDuration(),
+		}
+	}
+}
+
 // increaseVolume increases volume by 10%
 func (p *PlayerComponent) increaseVolume() (tea.Model, tea.Cmd) {
 	if p.audioPlayer == nil {
@@ -918,6 +966,42 @@ func (p *PlayerComponent) renderErrorView() string {
 func (p *PlayerComponent) usesCompactLayout() bool {
 	// App sizes the component to the available content area plus one row.
 	return p.height <= 8
+}
+
+// ProgressBarViewport reports the on-screen bounds of the progress bar within
+// this component's own View(): its row, starting column, and cell width, all
+// relative to the View's top-left (the app adds the header offset). ok is false
+// whenever no seekable bar is shown — idle/loading/completed/error state, no
+// track, compact layout, or a degenerate width. The row is computed from the
+// same pieces renderPlayingView lays out (topChrome, metadata height, the
+// blank/status/blank rows above the bar) so a wrapped title shifts it
+// correctly; TestProgressBarViewport_MatchesRender pins this to real output.
+func (p *PlayerComponent) ProgressBarViewport() (row, startX, width int, ok bool) {
+	if p.currentTrack == nil {
+		return 0, 0, 0, false
+	}
+	if p.state != StatePlaying && p.state != StatePaused {
+		return 0, 0, 0, false
+	}
+	if p.usesCompactLayout() {
+		return 0, 0, 0, false
+	}
+
+	width = p.width - 12
+	if width <= 0 {
+		return 0, 0, 0, false
+	}
+
+	// Chrome the PlayerStyle panel adds above/left of its content.
+	topChrome := styles.PlayerStyle.GetBorderTopSize() + styles.PlayerStyle.GetPaddingTop()
+	startX = styles.PlayerStyle.GetBorderLeftSize() + styles.PlayerStyle.GetPaddingLeft()
+
+	// Rows stacked above the bar inside the content (see renderPlayingView):
+	// metadata panel, one blank, the single-line status, one blank.
+	metadata := styles.RenderMetadataPanel(p.currentTrack.Title, p.currentTrack.Artist(), p.width-8)
+	const blankAfterMetadata, statusHeight, blankAfterStatus = 1, 1, 1
+	row = topChrome + lipgloss.Height(metadata) + blankAfterMetadata + statusHeight + blankAfterStatus
+	return row, startX, width, true
 }
 
 func (p *PlayerComponent) renderCompactTrackView(status string) string {

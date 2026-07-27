@@ -161,23 +161,35 @@ Next small behavior:
   while retaining original collection indices. Playlist detail always clears
   the top-level filter rather than applying it to tracks.
 
-## Queued Work: Pointer Seek (2026-07-24 EDT)
+## Completed Work: Pointer Seek (2026-07-27 10:45 EDT)
 
 Goal: let Player-view clicks on the playback progress bar seek directly to the
 corresponding track position.
 
 Done criteria:
-- [ ] A click within the rendered progress-bar bounds seeks proportionally to
-  that bar's usable width.
-- [ ] Clicks outside the bar preserve existing Player interactions.
-- [ ] Edge clicks clamp precisely to the beginning and end of the known track
-  duration, with deterministic geometry tests.
+- [x] A click within the rendered progress-bar bounds seeks proportionally to
+  that bar's usable width. (`SeekToFraction` + `handleMouse` ViewPlayer case)
+- [x] Clicks outside the bar preserve existing Player interactions.
+  (`TestApp_ClickOffBarDoesNotSeek`, `TestApp_ClickBarCoordsOnOtherViewDoesNotSeek`)
+- [x] Edge clicks clamp precisely to the beginning and end of the known track
+  duration, with deterministic geometry tests. (`TestApp_ClickProgressBarEnds`,
+  `TestPlayerComponent_SeekToFraction_Clamps`)
+- [x] A click before duration metadata arrives is rejected without resetting
+  active playback (`SeekToFraction` no-ops when duration <= 0;
+  `TestPlayerComponent_SeekToFraction_NoDurationIsNoOp`).
 
-Next small behavior:
-- [ ] Identify the Player renderer's progress-bar bounds and existing seek
-  command boundary.
-  Curiosity poke: can a click before duration metadata arrives be rejected
-  without resetting active playback?
+Design notes:
+- `PlayerComponent.SeekToFraction(fraction)` maps 0.0–1.0 onto the track and
+  reuses the existing async Seek command; clamps out-of-range fractions.
+- `PlayerComponent.ProgressBarViewport()` reports the bar's (row, startX, width)
+  relative to the player View, computed from the same pieces renderPlayingView
+  lays out. `handleMouse` adds the header height for the absolute row.
+- Geometry is pinned to real rendered output by
+  `TestProgressBarViewport_MatchesRender` (the rendered █ run is the independent
+  oracle), so any future layout drift fails the test rather than silently
+  mis-seeking. Compact layouts (height <= 8) disable click-seek for now.
+- Not done: a controls-line hint ("Click bar: Seek") — deferred to avoid help
+  text overflow on narrow terminals.
 
 ## Current Work: Tab Hover Highlight (2026-07-24 EDT)
 
